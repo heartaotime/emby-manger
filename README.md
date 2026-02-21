@@ -52,6 +52,8 @@ environment:
   - EMBY_URL=http://100.64.64.1:9000  # Emby 服务器地址
   - EMBY_API_KEY=2a42f8230f9a49fa9df317048572ba09  # Emby API 密钥
   - EMBY_TEMPLATE_USER_ID=bdb7f79dbbb24839aee075811af0625a  # 模板用户 ID
+  - ADMIN_USERNAME=huxt      # 管理员用户名
+  - ADMIN_PASSWORD=admin123  # 管理员密码
 ```
 
 #### 方法二：使用 .env 文件
@@ -64,7 +66,7 @@ copy .env.example .env
 # 编辑 .env 文件，填入实际配置
 ```
 
-`.env` 文件包含以下配置项：
+`.env 文件包含以下配置项：
 
 ```
 # 数据库配置
@@ -78,6 +80,10 @@ DB_NAME=emby_manager
 EMBY_URL=http://your_emby_server:8096
 EMBY_API_KEY=your_emby_api_key
 EMBY_TEMPLATE_USER_ID=your_template_user_id
+
+# 管理员配置
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
 ```
 
 ### 启动服务
@@ -166,8 +172,11 @@ python app.py
 ### 1. 首次使用
 
 1. 启动服务后，访问 `http://localhost:5000`
-2. 点击「同步用户」按钮，从 Emby 服务器同步现有用户
-3. 系统会自动创建数据库表结构
+2. 系统会显示登录页面，使用配置的管理员账号密码登录
+   - 默认账号：huxt
+   - 默认密码：admin123
+3. 登录后，点击「同步用户」按钮，从 Emby 服务器同步现有用户
+4. 系统会自动创建数据库表结构
 
 ### 2. 创建用户
 

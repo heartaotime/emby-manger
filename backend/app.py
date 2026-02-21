@@ -1,10 +1,12 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 import pymysql
 import requests
 import os
 import datetime
 from dotenv import load_dotenv
+import jwt
+from functools import wraps
 
 # 加载环境变量
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -35,8 +37,36 @@ emby_config = {
     'template_user_id': os.getenv('EMBY_TEMPLATE_USER_ID', '')
 }
 
+# JWT配置
+SECRET_KEY = os.urandom(24).hex()
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')
+
 def get_db_connection():
     return pymysql.connect(**db_config)
+
+# 鉴权中间件
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        
+        # 从请求头获取token
+        if 'Authorization' in request.headers:
+            token = request.headers['Authorization'].split(' ')[1] if len(request.headers['Authorization'].split(' ')) > 1 else None
+        
+        if not token:
+            return jsonify({'success': False, 'message': '未提供认证令牌'}), 401
+        
+        try:
+            # 解码token
+            data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+            current_user = data['username']
+        except:
+            return jsonify({'success': False, 'message': '无效的认证令牌'}), 401
+        
+        return f(current_user, *args, **kwargs)
+    return decorated
 
 # 初始化数据库
 def init_db():
@@ -68,6 +98,34 @@ def init_db():
         print(f"数据库初始化失败: {e}")
         print("服务将继续运行，但数据库相关功能可能受限")
 
+# 登录API
+@app.route('/api/login', methods=['POST'])
+def login():
+    auth = request.json
+    
+    if not auth or not auth.get('username') or not auth.get('password'):
+        return jsonify({'success': False, 'message': '请提供用户名和密码'}), 401
+    
+    # 验证管理员账号密码
+    if auth['username'] == ADMIN_USERNAME and auth['password'] == ADMIN_PASSWORD:
+        # 生成JWT token
+        token = jwt.encode(
+            {'username': ADMIN_USERNAME, 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)},
+            SECRET_KEY,
+            algorithm='HS256'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': '登录成功',
+            'token': token,
+            'user': {
+                'username': ADMIN_USERNAME
+            }
+        })
+    
+    return jsonify({'success': False, 'message': '用户名或密码错误'}), 401
+
 # 测试路由
 @app.route('/api/test', methods=['GET'])
 def test():
@@ -75,7 +133,8 @@ def test():
 
 # 检查 Emby 连接状态
 @app.route('/api/emby/check-connection', methods=['GET'])
-def check_emby_connection():
+@token_required
+def check_emby_connection(current_user):
     url = f"{emby_config['url']}/emby/System/Info"
     headers = {
         'X-Emby-Token': emby_config['api_key'],
@@ -84,6 +143,15 @@ def check_emby_connection():
     
     try:
         response = requests.get(url, headers=headers, timeout=10)
+        print(f"📡 检查连接状态码: {response.status_code}")
+        try:
+            content_str = response.content.decode('utf-8')
+            import json
+            content_json = json.loads(content_str)
+            print(f"📄 检查连接响应内容: {json.dumps(content_json, ensure_ascii=False, indent=2)}")
+        except:
+            print(f"📄 检查连接响应内容: {response.content}")
+        
         if response.status_code == 200:
             system_info = response.json()
             return jsonify({
@@ -97,16 +165,20 @@ def check_emby_connection():
                 }
             })
         else:
+            error_msg = f'连接Emby服务器失败: 状态码 {response.status_code}，响应: {response.content}'
+            print(f"❌ {error_msg}")
             return jsonify({
                 'success': True,
                 'connected': False,
-                'message': f'连接Emby服务器失败: 状态码 {response.status_code}'
+                'message': error_msg
             })
     except Exception as e:
+        error_msg = f'连接Emby服务器错误: {str(e)}'
+        print(f"❌ {error_msg}")
         return jsonify({
             'success': True,
             'connected': False,
-            'message': f'连接Emby服务器错误: {str(e)}'
+            'message': error_msg
         })
 
 # 获取Emby用户信息
@@ -123,13 +195,26 @@ def get_emby_user_info(emby_id):
             'Accept': 'application/json'
         }
         response = requests.get(url, headers=headers, timeout=10)
+        print(f"📡 获取用户信息状态码: {response.status_code}")
+        try:
+            content_str = response.content.decode('utf-8')
+            import json
+            content_json = json.loads(content_str)
+            print(f"📄 获取用户信息响应内容: {json.dumps(content_json, ensure_ascii=False, indent=2)}")
+        except:
+            print(f"📄 获取用户信息响应内容: {response.content}")
+        
         if response.status_code == 200:
             user_data = response.json()
             return True, user_data
         else:
-            return False, f'获取Emby用户信息失败: {response.status_code}'
+            error_msg = f"获取失败，状态码: {response.status_code}，响应: {response.content}"
+            print(f"❌ Emby 用户 {emby_id} {error_msg}")
+            return False, error_msg
     except Exception as e:
-        return False, f'获取Emby用户信息错误: {str(e)}'
+        error_msg = f"获取错误: {str(e)}"
+        print(f"❌ Emby 用户 {emby_id} {error_msg}")
+        return False, error_msg
 
 # 公共方法：启用/禁用用户
 def toggle_user_status(user_id, is_active):
@@ -173,7 +258,7 @@ def toggle_user_status(user_id, is_active):
         emby_user_data = user_policy
         
         # 更新 Emby 用户状态
-        emby_update_success = update_emby_user_policy(emby_id, emby_user_data)
+        emby_update_success, error_msg = update_emby_user_policy(emby_id, emby_user_data)
         status_icon = "🔒" if not is_active else "🔓"
         result_icon = "✅" if emby_update_success else "❌"
         print(f"{result_icon} {status_icon} 已更新 Emby 用户 {emby_id} 状态: {'已禁用' if not is_active else '已启用'}, 成功: {emby_update_success}")
@@ -196,7 +281,7 @@ def toggle_user_status(user_id, is_active):
             # Emby更新失败
             cursor.close()
             conn.close()
-            return False, '在Emby中更新用户状态失败'
+            return False, f'在Emby中更新用户状态失败: {error_msg}' if error_msg else '在Emby中更新用户状态失败'
     except Exception as e:
         print(f"❌ 启用/禁用用户错误: {e}")
         return False, str(e)
@@ -209,22 +294,40 @@ def get_emby_users():
         'Accept': 'application/json'
     }
     
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        print(f"📡 获取用户列表状态码: {response.status_code}")
         try:
-            data = response.json()
-            # Check if response is directly a list or has an 'Items' key
-            if isinstance(data, list):
-                return data
-            elif 'Items' in data:
-                return data['Items']
-            else:
-                # Return empty list if unexpected structure
-                return []
-        except Exception as e:
-            print(f"❌ 解析 Emby 用户响应错误: {e}")
-            return []
-    return []
+            content_str = response.content.decode('utf-8')
+            import json
+            content_json = json.loads(content_str)
+            print(f"📄 获取用户列表响应内容: {json.dumps(content_json, ensure_ascii=False, indent=2)}")
+        except:
+            print(f"📄 获取用户列表响应内容: {response.content}")
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                # Check if response is directly a list or has an 'Items' key
+                if isinstance(data, list):
+                    return True, data
+                elif 'Items' in data:
+                    return True, data['Items']
+                else:
+                    # Return empty list if unexpected structure
+                    return True, []
+            except Exception as e:
+                error_msg = f"解析 Emby 用户响应错误: {e}"
+                print(f"❌ {error_msg}")
+                return False, error_msg
+        else:
+            error_msg = f"获取用户列表失败，状态码: {response.status_code}，响应: {response.content}"
+            print(f"❌ {error_msg}")
+            return False, error_msg
+    except Exception as e:
+        error_msg = f"获取用户列表错误: {str(e)}"
+        print(f"❌ {error_msg}")
+        return False, error_msg
 
 def get_emby_user_details(user_id):
     """获取单个 Emby 用户的详细信息，包括注册时间"""
@@ -329,8 +432,9 @@ def create_emby_user(user_data):
                 print(f"📋 前端传入的完整数据: {json.dumps(user_data, ensure_ascii=False, indent=2)}")
                 password_url = f"{emby_config['url']}/emby/Users/{user_id}/Password"
                 password_data = {
-                    'NewPw': user_password,
-                    'ResetPassword': True
+                    # 'CurrentPw': None,
+                    'NewPw': user_password
+                    # 'ResetPassword': True
                 }
                 
                 import json
@@ -384,13 +488,15 @@ def update_emby_user_policy(user_id, user_data):
         
         if response.status_code in [200, 204]:
             print(f"✅ Emby 用户 {user_id} 更新成功")
-            return True
+            return True, None
         else:
-            print(f"❌ Emby 用户 {user_id} 更新失败: {response.status_code}")
-            return False
+            error_msg = f"更新失败，状态码: {response.status_code}，响应: {response.content}"
+            print(f"❌ Emby 用户 {user_id} {error_msg}")
+            return False, error_msg
     except Exception as e:
-        print(f"❌ Emby 用户 {user_id} 更新错误: {e}")
-        return False
+        error_msg = f"更新错误: {str(e)}"
+        print(f"❌ Emby 用户 {user_id} {error_msg}")
+        return False, error_msg
 
 def delete_emby_user(user_id):
     url = f"{emby_config['url']}/emby/Users/{user_id}"
@@ -399,14 +505,39 @@ def delete_emby_user(user_id):
         'Accept': 'application/json'
     }
     
-    response = requests.delete(url, headers=headers)
-    return response.status_code == 204
+    try:
+        response = requests.delete(url, headers=headers, timeout=10)
+        print(f"📡 删除用户状态码: {response.status_code}")
+        try:
+            content_str = response.content.decode('utf-8')
+            import json
+            content_json = json.loads(content_str)
+            print(f"📄 删除响应内容: {json.dumps(content_json, ensure_ascii=False, indent=2)}")
+        except:
+            print(f"📄 删除响应内容: {response.content}")
+        
+        if response.status_code == 204:
+            print(f"✅ Emby 用户 {user_id} 删除成功")
+            return True, None
+        else:
+            error_msg = f"删除失败，状态码: {response.status_code}，响应: {response.content}"
+            print(f"❌ Emby 用户 {user_id} {error_msg}")
+            return False, error_msg
+    except Exception as e:
+        error_msg = f"删除错误: {str(e)}"
+        print(f"❌ Emby 用户 {user_id} {error_msg}")
+        return False, error_msg
 
 # 用户同步路由
 @app.route('/api/sync/users', methods=['POST'])
-def sync_users():
+@token_required
+def sync_users(current_user):
     try:
-        emby_users = get_emby_users()
+        emby_success, emby_result = get_emby_users()
+        if not emby_success:
+            return jsonify({'success': False, 'message': f'从Emby同步用户失败: {emby_result}'}), 500
+        
+        emby_users = emby_result
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -478,7 +609,8 @@ def sync_users():
 
 # 获取所有用户
 @app.route('/api/users', methods=['GET'])
-def get_users():
+@token_required
+def get_users(current_user):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
@@ -560,7 +692,8 @@ def get_users():
 
 # 创建用户
 @app.route('/api/users', methods=['POST'])
-def create_user():
+@token_required
+def create_user(current_user):
     try:
         data = request.json
         name = data['name']
@@ -589,7 +722,8 @@ def create_user():
         
         success, emby_response = create_emby_user(emby_user_data)
         if not success:
-            return jsonify({'success': False, 'message': '在Emby中创建用户失败'}), 500
+            error_message = emby_response.get('error', '未知错误')
+            return jsonify({'success': False, 'message': f'在Emby中创建用户失败: {error_message}'}), 500
         
         emby_id = emby_response['Id']
         
@@ -612,7 +746,8 @@ def create_user():
 
 # 更新用户（只修改过期时间）
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
-def update_user(user_id):
+@token_required
+def update_user(current_user, user_id):
     try:
         data = request.json
         conn = get_db_connection()
@@ -681,7 +816,8 @@ def update_user(user_id):
 
 # 启用/禁用用户
 @app.route('/api/users/<int:user_id>/status', methods=['PUT'])
-def update_user_status(user_id):
+@token_required
+def update_user_status(current_user, user_id):
     try:
         data = request.json
         conn = get_db_connection()
@@ -719,7 +855,8 @@ def update_user_status(user_id):
 
 # 删除用户
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
-def delete_user(user_id):
+@token_required
+def delete_user(current_user, user_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -733,8 +870,9 @@ def delete_user(user_id):
         emby_id = user[0]
         
         # 从 Emby 中删除用户
-        if not delete_emby_user(emby_id):
-            return jsonify({'success': False, 'message': '从Emby中删除用户失败'}), 500
+        delete_success, error_msg = delete_emby_user(emby_id)
+        if not delete_success:
+            return jsonify({'success': False, 'message': f'从Emby中删除用户失败: {error_msg}' if error_msg else '从Emby中删除用户失败'}), 500
         
         # 从数据库中标记用户为已删除（更新state字段为0）
         cursor.execute('UPDATE users SET state = 0 WHERE id = %s', (user_id,))
@@ -749,7 +887,8 @@ def delete_user(user_id):
 
 # 检查用户有效期并禁用过期用户
 @app.route('/api/check-expire', methods=['POST'])
-def check_expire():
+@token_required
+def check_expire(current_user):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(pymysql.cursors.DictCursor)

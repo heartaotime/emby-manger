@@ -2,17 +2,26 @@ version: '3.8'
 
 services:
   emby-manager:
-    build: .
+    image: heartaotime/emby-manager:latest
     ports:
       - "5000:5000"
     environment:
+      # 应用基础配置
       - FLASK_ENV=production
-      - DB_HOST=100.64.64.1
+      
+      # 数据库配置
+      - DB_HOST=172.17.0.1
       - DB_PORT=3306
       - DB_USER=emby_manager
       - DB_PASSWORD=emby_manager
       - DB_NAME=emby_manager
+      
+      # Emby 服务器配置
       - EMBY_URL=http://100.64.64.1:9000
       - EMBY_API_KEY=2a42f8230f9a49fa9df317048572ba09
       - EMBY_TEMPLATE_USER_ID=bdb7f79dbbb24839aee075811af0625a
+      
+      # 管理员配置
+      - ADMIN_USERNAME=huxt
+      - ADMIN_PASSWORD=admin123
     restart: unless-stopped

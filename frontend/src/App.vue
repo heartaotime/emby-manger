@@ -1,5 +1,8 @@
 <template>
-  <div class="app-container">
+  <div v-if="!isLoggedIn" class="login-page">
+    <Login @login-success="handleLoginSuccess" />
+  </div>
+  <div v-else class="app-container">
     <!-- 侧边栏 -->
     <el-aside width="200px" class="sidebar">
       <div class="logo">Emby 管理系统</div>
@@ -22,6 +25,10 @@
         <el-menu-item index="3">
           <el-icon><Connection /></el-icon>
           <span>检查 Emby 连接</span>
+        </el-menu-item>
+        <el-menu-item index="4" @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          <span>退出登录</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -217,6 +224,9 @@
         <el-form-item label="用户名" prop="name">
           <el-input v-model="createUserForm.name" placeholder="请输入用户名" />
         </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input v-model="createUserForm.password" type="password" placeholder="请输入密码" show-password />
+        </el-form-item>
         <el-form-item label="过期时间">
           <el-date-picker
             v-model="createUserForm.expire_date"
@@ -277,14 +287,56 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
+import Login from './components/Login.vue'
 
 // 配置 axios 基础路径
 axios.defaults.baseURL = 'http://localhost:5000/api'
 
+// 添加请求拦截器，携带token
+axios.interceptors.request.use(
+  config => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  error => {
+    return Promise.reject(error)
+  }
+)
+
+// 添加响应拦截器，处理401错误
+axios.interceptors.response.use(
+  response => {
+    return response
+  },
+  error => {
+    if (error.response && error.response.status === 401) {
+      // 检查当前是否在登录页面
+      // 如果是登录页面，不重新加载，让错误消息正常显示
+      // 如果不是登录页面，清除登录状态并重新加载
+      const isLoginPage = window.location.pathname === '/' || window.location.pathname.includes('login')
+      if (!isLoginPage) {
+        // 清除本地存储的登录状态
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        // 重新加载页面，跳转到登录页
+        window.location.reload()
+      }
+    }
+    return Promise.reject(error)
+  }
+)
+
 export default {
   name: 'App',
+  components: {
+    Login
+  },
   setup() {
     // 响应式数据
+    const isLoggedIn = ref(false)
     const activeMenu = ref('1')
     const users = ref([])
     const createUserDialogVisible = ref(false)
@@ -294,10 +346,31 @@ export default {
     const statusFilter = ref(null)
     const expireFilter = ref(null)
     const loading = ref(false)
+    
+    // 检查登录状态
+    const checkLoginStatus = () => {
+      const token = localStorage.getItem('token')
+      isLoggedIn.value = !!token
+    }
+    
+    // 处理登录成功
+    const handleLoginSuccess = () => {
+      checkLoginStatus()
+      fetchUsers()
+    }
+    
+    // 处理退出登录
+    const handleLogout = () => {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      isLoggedIn.value = false
+      ElMessage.success('已退出登录')
+    }
 
     // 表单数据
     const createUserForm = ref({
       name: '',
+      password: '123456',
       expire_date: null
     })
 
@@ -312,7 +385,8 @@ export default {
 
     // 表单验证规则
     const createUserRules = {
-      name: [{ required: true, message: '请输入用户名', trigger: 'blur' }]
+      name: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+      password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
     }
 
     const editUserRules = {
@@ -364,7 +438,8 @@ export default {
           users.value = response.data.data
         }
       } catch (error) {
-        ElMessage.error('获取用户列表失败')
+        const errorMessage = error.response?.data?.message || '获取用户列表失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -374,6 +449,7 @@ export default {
     const openCreateUserDialog = () => {
       createUserForm.value = {
         name: '',
+        password: '123456',
         expire_date: null
       }
       createUserDialogVisible.value = true
@@ -394,7 +470,8 @@ export default {
           ElMessage.error(response.data.message)
         }
       } catch (error) {
-        ElMessage.error('创建用户失败')
+        const errorMessage = error.response?.data?.message || '创建用户失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -430,7 +507,8 @@ export default {
           ElMessage.error(response.data.message)
         }
       } catch (error) {
-        ElMessage.error('更新用户失败')
+        const errorMessage = error.response?.data?.message || '更新用户失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -450,7 +528,8 @@ export default {
           ElMessage.error(response.data.message)
         }
       } catch (error) {
-        ElMessage.error('操作失败')
+        const errorMessage = error.response?.data?.message || '操作失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -475,7 +554,8 @@ export default {
         }
       } catch (error) {
         if (error !== 'cancel') {
-          ElMessage.error('删除用户失败')
+          const errorMessage = error.response?.data?.message || '删除用户失败'
+          ElMessage.error(errorMessage)
           console.error(error)
         }
       } finally {
@@ -494,7 +574,8 @@ export default {
           ElMessage.error(response.data.message)
         }
       } catch (error) {
-        ElMessage.error('同步失败')
+        const errorMessage = error.response?.data?.message || '同步失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -512,7 +593,8 @@ export default {
           ElMessage.error(response.data.message)
         }
       } catch (error) {
-        ElMessage.error('检查失败')
+        const errorMessage = error.response?.data?.message || '检查失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -530,10 +612,12 @@ export default {
             server_info: response.data.server_info
           }
         } else {
-          ElMessage.error('检查连接状态失败')
+          const errorMessage = response.data.message || '检查连接状态失败'
+          ElMessage.error(errorMessage)
         }
       } catch (error) {
-        ElMessage.error('检查连接失败')
+        const errorMessage = error.response?.data?.message || '检查连接失败'
+        ElMessage.error(errorMessage)
         console.error(error)
       } finally {
         loading.value = false
@@ -542,10 +626,14 @@ export default {
 
     // 生命周期
     onMounted(() => {
-      fetchUsers()
+      checkLoginStatus()
+      if (isLoggedIn.value) {
+        fetchUsers()
+      }
     })
 
     return {
+      isLoggedIn,
       activeMenu,
       users,
       pageTitle,
@@ -573,7 +661,9 @@ export default {
       deleteUser,
       syncUsers,
       checkExpiredUsers,
-      checkEmbyConnection
+      checkEmbyConnection,
+      handleLoginSuccess,
+      handleLogout
     }
   }
 }
@@ -667,13 +757,15 @@ body, html {
   background-color: #f5f7fa;
   min-width: 0;
   max-width: none;
-  width: calc(100vw - 200px);
+  width: 100%;
 }
 
 /* 覆盖Element Plus默认样式 */
 .el-container {
   width: 100% !important;
   max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .el-main {
@@ -682,6 +774,7 @@ body, html {
   max-width: none !important;
   margin: 0 !important;
   min-width: 0 !important;
+  flex: 1 !important;
 }
 
 /* 调整用户列表容器 */
@@ -700,12 +793,21 @@ body, html {
   width: 100% !important;
   max-width: none !important;
   box-sizing: border-box;
+  margin: 0 !important;
 }
 
 .el-table__header-wrapper,
 .el-table__body-wrapper {
   width: 100% !important;
   max-width: none !important;
+}
+
+.el-table__row {
+  width: 100% !important;
+}
+
+.el-table-column {
+  flex-shrink: 0;
 }
 
 /* 搜索区域样式 */
@@ -778,6 +880,11 @@ body, html {
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
+}
+
+.login-page {
+  min-height: 100vh;
+  background-color: #f5f7fa;
 }
 
 /* 响应式设计 */
