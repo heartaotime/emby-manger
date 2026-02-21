@@ -39,6 +39,12 @@
             <span>检查 Emby 连接</span>
           </template>
         </el-menu-item>
+        <el-menu-item index="4">
+          <el-icon><VideoCamera /></el-icon>
+          <template #title>
+            <span>189Share 管理</span>
+          </template>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -217,8 +223,8 @@
         </el-card>
 
         <!-- 检查过期用户 -->
-        <div v-if="activeMenu === '2'" class="center-content">
-          <el-card class="expire-card" shadow="hover">
+        <div v-if="activeMenu === '2'" class="full-width-content">
+          <el-card class="expire-card" shadow="hover" style="width: 100%;">
             <template #header>
               <div class="card-header">
                 <span>检查过期用户</span>
@@ -235,8 +241,8 @@
         </div>
 
         <!-- 检查 Emby 连接 -->
-        <div v-if="activeMenu === '3'" class="center-content">
-          <el-card class="connection-card" shadow="hover">
+        <div v-if="activeMenu === '3'" class="full-width-content">
+          <el-card class="connection-card" shadow="hover" style="width: 100%;">
             <template #header>
               <div class="card-header">
                 <span>检查 Emby 连接</span>
@@ -267,6 +273,56 @@
                     <el-descriptions-item label="版本">{{ connectionStatus.server_info.version }}</el-descriptions-item>
                     <el-descriptions-item label="操作系统">{{ connectionStatus.server_info.operating_system }}</el-descriptions-item>
                   </el-descriptions>
+                </el-card>
+              </div>
+            </div>
+          </el-card>
+        </div>
+
+        <!-- CloudPan 189Share 管理 -->
+        <div v-if="activeMenu === '4'" class="full-width-content">
+          <el-card class="cloudpan189share-card" shadow="hover" style="width: 100%;">
+            <template #header>
+              <div class="card-header">
+                <span>189Share 管理</span>
+              </div>
+            </template>
+            <div class="cloudpan189share-content">
+              <div class="action-buttons">
+                <el-button type="primary" @click="executeCloudPan189ShareScript" size="large">
+                  <el-icon><VideoCamera /></el-icon>
+                  执行 CloudPan 189Share 脚本
+                </el-button>
+                <el-button type="success" @click="fetchCloudPan189ShareLogs" size="large">
+                  <el-icon><Document /></el-icon>
+                  刷新日志
+                </el-button>
+                <el-button type="danger" @click="stopCloudPan189ShareScript" size="large">
+                  <el-icon><Close /></el-icon>
+                  中断执行
+                </el-button>
+              </div>
+              <div class="logs-section" style="margin-top: 20px;">
+                <el-card class="logs-card" shadow="hover">
+                  <template #header>
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                      <span>执行日志</span>
+                      <el-switch 
+                        v-model="autoScrollEnabled" 
+                        active-text="自动滚动" 
+                        inactive-text="手动滚动"
+                        style="margin-left: 10px;"
+                      />
+                    </div>
+                  </template>
+                  <div class="logs-container" v-loading="loadingCloudPanLogs">
+                    <el-scrollbar height="400px" ref="scrollbarRef">
+                      <pre v-if="cloudpan189shareLogs" class="logs-content">{{ cloudpan189shareLogs }}</pre>
+                      <div v-else class="no-logs">
+                        脚本尚未执行或日志文件不存在
+                      </div>
+                    </el-scrollbar>
+                  </div>
                 </el-card>
               </div>
             </div>
@@ -352,7 +408,7 @@ import axios from 'axios'
 import Login from './components/Login.vue'
 
 // 配置 axios 基础路径
-axios.defaults.baseURL = 'http://localhost:5000/api'
+axios.defaults.baseURL = '/api'
 
 // 添加请求拦截器，携带token
 axios.interceptors.request.use(
@@ -375,11 +431,9 @@ axios.interceptors.response.use(
   },
   error => {
     if (error.response && error.response.status === 401) {
-      // 检查当前是否在登录页面
-      // 如果是登录页面，不重新加载，让错误消息正常显示
-      // 如果不是登录页面，清除登录状态并重新加载
-      const isLoginPage = window.location.pathname === '/' || window.location.pathname.includes('login')
-      if (!isLoginPage) {
+      // 检查是否是登录接口的请求
+      const isLoginRequest = error.config && error.config.url && error.config.url.includes('/login')
+      if (!isLoginRequest) {
         // 清除本地存储的登录状态
         localStorage.removeItem('token')
         localStorage.removeItem('user')
@@ -411,6 +465,10 @@ export default {
     const sidebarCollapsed = ref(false)
     const searchForm = ref({})
     const currentPage = ref(1)
+    const cloudpan189shareLogs = ref('')
+    const loadingCloudPanLogs = ref(false)
+    const autoScrollEnabled = ref(true)
+    const scrollbarRef = ref(null)
     
     // 检查登录状态
     const checkLoginStatus = () => {
@@ -469,6 +527,7 @@ export default {
         case '1': return '用户管理'
         case '2': return '检查过期用户'
         case '3': return '检查 Emby 连接'
+        case '4': return '189Share 管理'
         default: return '用户管理'
       }
     })
@@ -704,6 +763,82 @@ export default {
       }
     }
 
+    // 执行CloudPan 189Share脚本
+    const executeCloudPan189ShareScript = async () => {
+      try {
+        loading.value = true
+        const response = await axios.post('/189share/execute')
+        if (response.data.success) {
+          ElMessage.success(response.data.message)
+          // 执行后自动获取日志
+          setTimeout(() => {
+            fetchCloudPan189ShareLogs()
+          }, 2000)
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || '执行脚本失败'
+        ElMessage.error(errorMessage)
+        console.error(error)
+      } finally {
+        loading.value = false
+      }
+    }
+
+    // 获取CloudPan 189Share脚本执行日志
+    const fetchCloudPan189ShareLogs = async () => {
+      try {
+        loadingCloudPanLogs.value = true
+        const response = await axios.get('/189share/logs')
+        if (response.data.success) {
+          cloudpan189shareLogs.value = response.data.logs
+          console.log('获取到的日志内容:', response.data.logs)
+          
+          // 自动滚动到底部
+          if (autoScrollEnabled.value) {
+            setTimeout(() => {
+              if (scrollbarRef.value) {
+                scrollbarRef.value.wrap.scrollTop = scrollbarRef.value.wrap.scrollHeight
+              }
+            }, 100)
+          }
+        } else {
+          ElMessage.error(response.data.message)
+          console.error('获取日志失败:', response.data.message)
+        }
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || '获取日志失败'
+        ElMessage.error(errorMessage)
+        console.error('获取日志时发生错误:', error)
+      } finally {
+        loadingCloudPanLogs.value = false
+      }
+    }
+
+    // 中断CloudPan 189Share脚本执行
+    const stopCloudPan189ShareScript = async () => {
+      try {
+        loading.value = true
+        const response = await axios.post('/189share/stop')
+        if (response.data.success) {
+          ElMessage.success(response.data.message)
+          // 中断后刷新日志
+          setTimeout(() => {
+            fetchCloudPan189ShareLogs()
+          }, 1000)
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || '中断脚本失败'
+        ElMessage.error(errorMessage)
+        console.error(error)
+      } finally {
+        loading.value = false
+      }
+    }
+
     // 生命周期
     onMounted(() => {
       checkLoginStatus()
@@ -734,6 +869,8 @@ export default {
       sidebarCollapsed,
       searchForm,
       currentPage,
+      cloudpan189shareLogs,
+      loadingCloudPanLogs,
       handleMenuSelect,
       toggleSidebar,
       handleCurrentChange,
@@ -748,6 +885,11 @@ export default {
       syncUsers,
       checkExpiredUsers,
       checkEmbyConnection,
+      executeCloudPan189ShareScript,
+      fetchCloudPan189ShareLogs,
+      stopCloudPan189ShareScript,
+      autoScrollEnabled,
+      scrollbarRef,
       handleLoginSuccess,
       handleLogout
     }
@@ -935,37 +1077,97 @@ body, html {
   min-height: calc(100vh - 120px);
 }
 
+/* 全屏宽度内容样式 */
+.full-width-content {
+  width: 100%;
+  min-height: calc(100vh - 120px);
+}
+
 /* 卡片样式 */
 .expire-card,
 .connection-card {
-  width: 600px;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
   text-align: center;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
   overflow: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.expire-card:hover,
+.connection-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .expire-content,
 .connection-content {
-  padding: 40px;
+  padding: 60px 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
+  justify-content: center;
+  min-height: 400px;
+  gap: 40px;
 }
 
 .expire-content p,
 .connection-content p {
-  font-size: 16px;
-  color: #606266;
+  font-size: 18px;
+  color: #495057;
   margin-bottom: 0;
+  line-height: 1.6;
+  max-width: 600px;
+}
+
+/* 按钮样式增强 */
+.expire-content .el-button,
+.connection-content .el-button {
+  padding: 14px 32px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 50px;
+  transition: all 0.3s ease;
+}
+
+.expire-content .el-button:hover,
+.connection-content .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(25, 137, 250, 0.3);
 }
 
 /* 服务器信息卡片样式 */
 .server-info-card {
-  margin-top: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
+  margin-top: 30px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.server-info-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* 服务器信息描述列表样式 */
+.server-info-card .el-descriptions {
+  padding: 20px;
+}
+
+.server-info-card .el-descriptions__label {
+  font-weight: 600;
+  color: #495057;
+}
+
+.server-info-card .el-descriptions__content {
+  color: #6c757d;
 }
 
 /* 对话框样式 */
@@ -1092,5 +1294,85 @@ body, html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* CloudPan 189Share 管理页面样式 */
+.cloudpan189share-card {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.cloudpan189share-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.cloudpan189share-content {
+  padding: 30px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.action-buttons .el-button {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.action-buttons .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.logs-card {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 1px solid #e9ecef;
+  transition: all 0.3s ease;
+}
+
+.logs-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.logs-container {
+  width: 100%;
+}
+
+.logs-content {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.no-logs {
+  text-align: center;
+  color: #909399;
+  padding: 40px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
 }
 </style>

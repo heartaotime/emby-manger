@@ -1,6 +1,8 @@
 # 后端排除文件
 backend/__pycache__/
 backend/.env
+backend/data
+backend/log
 
 # 前端排除文件
 frontend/node_modules/

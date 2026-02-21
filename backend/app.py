@@ -4,6 +4,7 @@ import pymysql
 import requests
 import os
 import datetime
+import subprocess
 from dotenv import load_dotenv
 import jwt
 from functools import wraps
@@ -19,7 +20,8 @@ if os.path.exists(env_path):
                 os.environ[key] = value
 
 app = Flask(__name__)
-CORS(app)
+# 配置CORS，允许所有跨域请求
+CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 
 # 数据库配置
 db_config = {
@@ -29,6 +31,9 @@ db_config = {
     'password': os.getenv('DB_PASSWORD', 'password'),
     'database': os.getenv('DB_NAME', 'emby_manager')
 }
+
+# 全局变量，用于保存189share脚本进程
+script_process = None
 
 # Emby 配置
 emby_config = {
@@ -926,6 +931,163 @@ def check_expire(current_user):
         
         return jsonify({'success': True, 'message': f'已禁用 {disabled_count} 个过期用户'})
     except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# 执行189share脚本
+@app.route('/api/189share/execute', methods=['POST'])
+@token_required
+def execute_189share(current_user):
+    try:
+        import subprocess
+        import os
+        import threading
+        import time
+        
+        # 脚本路径
+        script_path = os.path.join(os.path.dirname(__file__), 'plugin', 'cloudpan189share.py')
+        
+        # 日志文件路径
+        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, '189share.log')
+        
+        # 执行脚本的函数
+        def run_script():
+            global script_process
+            # 同时输出到文件和控制台
+            class Tee:
+                def __init__(self, file_obj):
+                    self.file_obj = file_obj
+                def write(self, data):
+                    self.file_obj.write(data)
+                    print(data, end='')
+                def flush(self):
+                    self.file_obj.flush()
+            
+            # 尝试打开日志文件，添加错误处理
+            try:
+                # 使用 'w' 模式直接覆盖写入，不需要先删除文件
+                with open(log_file, 'w', encoding='utf-8') as f:
+                    tee = Tee(f)
+                    # 设置环境变量，确保 Python 以 UTF-8 编码运行
+                    env = os.environ.copy()
+                    env['PYTHONIOENCODING'] = 'utf-8'
+                    # 保存进程对象，以便后续可以中断
+                    # 不使用 shell=True，直接执行命令，以便正确终止进程
+                    script_process = subprocess.Popen(['python', script_path], 
+                                                   stdout=tee, 
+                                                   stderr=tee, 
+                                                   cwd=os.path.dirname(__file__),
+                                                   shell=False,
+                                                   env=env)
+                    print(f"[INFO] 脚本进程已启动，PID: {script_process.pid}")
+                    # 等待进程完成
+                    script_process.wait()
+            except Exception as e:
+                print(f"[ERROR] 无法写入日志文件: {str(e)}")
+                # 如果无法写入日志文件，仅输出到控制台
+                env = os.environ.copy()
+                env['PYTHONIOENCODING'] = 'utf-8'
+                # 不使用 shell=True，直接执行命令，以便正确终止进程
+                script_process = subprocess.Popen(['python', script_path], 
+                                               cwd=os.path.dirname(__file__),
+                                               shell=False,
+                                               env=env)
+                print(f"[INFO] 脚本进程已启动，PID: {script_process.pid}")
+                script_process.wait()
+            finally:
+                # 执行完成后清空进程对象
+                script_process = None
+        
+        # 在后台线程中执行脚本
+        thread = threading.Thread(target=run_script)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'success': True, 'message': '189share脚本已开始执行，请稍候查看日志'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# 获取189share脚本执行日志
+@app.route('/api/189share/logs', methods=['GET'])
+@token_required
+def get_189share_logs(current_user):
+    try:
+        import os
+        
+        # 日志文件路径
+        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+        log_file = os.path.join(log_dir, '189share.log')
+        
+        # 读取日志内容
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                logs = f.read()
+        else:
+            logs = '脚本尚未执行或日志文件不存在'
+        
+        return jsonify({'success': True, 'logs': logs})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# 中断189share脚本执行
+@app.route('/api/189share/stop', methods=['POST'])
+@token_required
+def stop_189share(current_user):
+    try:
+        # 使用全局变量 script_process
+        global script_process
+        
+        print("ℹ️ [INFO] 开始处理脚本中断请求")
+        
+        if script_process:
+            # 保存当前进程对象的引用
+            current_process = script_process
+            # 立即清空全局变量，避免其他请求干扰
+            script_process = None
+            
+            process_status = current_process.poll()
+            print(f"ℹ️ [INFO] 进程状态: {'运行中' if process_status is None else f'已结束，退出码: {process_status}'}")
+            
+            if process_status is None:
+                print(f"⚠️ [INFO] 正在终止进程 (PID: {current_process.pid})...")
+                # 终止进程
+                current_process.terminate()
+                
+                try:
+                    # 等待进程终止
+                    print("ℹ️ [INFO] 等待进程终止，最多等待5秒...")
+                    current_process.wait(timeout=5)
+                    final_status = current_process.poll()
+                    print(f"✅ [INFO] 进程已成功终止，退出码: {final_status}")
+                except subprocess.TimeoutExpired:
+                    # 如果超时，强制杀死进程
+                    print("⚠️ [INFO] 进程终止超时，尝试强制杀死...")
+                    try:
+                        current_process.kill()
+                        print("✅ [INFO] 进程已强制杀死")
+                    except Exception as kill_error:
+                        print(f"❌ [ERROR] 强制杀死进程时发生错误: {str(kill_error)}")
+                except Exception as wait_error:
+                    print(f"❌ [ERROR] 等待进程终止时发生错误: {str(wait_error)}")
+                finally:
+                    # 进程处理完成
+                    del current_process
+                    print("ℹ️ [INFO] 脚本中断处理完成")
+                
+                return jsonify({'success': True, 'message': '脚本执行已中断'})
+            else:
+                # 进程已经结束
+                del current_process
+                print("ℹ️ [INFO] 脚本进程已结束，无需中断")
+                return jsonify({'success': False, 'message': '脚本进程已结束'})
+        else:
+            print("ℹ️ [INFO] 没有正在执行的脚本进程")
+            return jsonify({'success': False, 'message': '没有正在执行的脚本'})
+    except Exception as e:
+        print(f"❌ [ERROR] 中断脚本时发生错误: {str(e)}")
+        # 确保进程对象被清空
+        script_process = None
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

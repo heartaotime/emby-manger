@@ -2,6 +2,7 @@
 backend/__pycache__/
 backend/.env
 backend/*.pyc
+backend/data
 
 # 前端忽略文件
 frontend/node_modules/
@@ -70,3 +71,5 @@ coverage/
 # 文档相关
 *.rst
 
+data/data.db
+docker-compose.yml

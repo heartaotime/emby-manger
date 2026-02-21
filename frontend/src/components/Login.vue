@@ -24,8 +24,8 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
-// 确保使用正确的baseURL
-axios.defaults.baseURL = 'http://localhost:5000/api'
+// 使用相对路径，与App.vue保持一致
+axios.defaults.baseURL = '/api'
 
 export default {
   name: 'Login',
