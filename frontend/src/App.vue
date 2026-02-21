@@ -2,223 +2,285 @@
   <div v-if="!isLoggedIn" class="login-page">
     <Login @login-success="handleLoginSuccess" />
   </div>
-  <div v-else class="app-container">
+  <el-container v-else class="app-container">
     <!-- 侧边栏 -->
-    <el-aside width="200px" class="sidebar">
-      <div class="logo">Emby 管理系统</div>
+    <el-aside :width="sidebarCollapsed ? '64px' : '200px'" class="sidebar" :class="{ 'collapsed': sidebarCollapsed }">
+      <div class="logo" @click="toggleSidebar">
+        <span v-if="!sidebarCollapsed">Emby 管理系统</span>
+        <el-icon v-else><Menu /></el-icon>
+      </div>
       <el-menu
-        default-active="1"
+        :default-active="activeMenu"
         class="el-menu-vertical-demo"
         mode="vertical"
         :default-openeds="['1']"
         unique-opened
         @select="handleMenuSelect"
+        :collapse="sidebarCollapsed"
+        active-text-color="#ffffff"
+        background-color="#1989fa"
+        text-color="rgba(255, 255, 255, 0.9)"
       >
         <el-menu-item index="1">
           <el-icon><User /></el-icon>
-          <span>用户管理</span>
+          <template #title>
+            <span>用户管理</span>
+          </template>
         </el-menu-item>
         <el-menu-item index="2">
           <el-icon><AlarmClock /></el-icon>
-          <span>检查过期用户</span>
+          <template #title>
+            <span>检查过期用户</span>
+          </template>
         </el-menu-item>
         <el-menu-item index="3">
           <el-icon><Connection /></el-icon>
-          <span>检查 Emby 连接</span>
-        </el-menu-item>
-        <el-menu-item index="4" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
-          <span>退出登录</span>
+          <template #title>
+            <span>检查 Emby 连接</span>
+          </template>
         </el-menu-item>
       </el-menu>
     </el-aside>
 
     <!-- 主内容区 -->
-    <el-main class="main-content">
-      <!-- 页面标题和操作按钮 -->
-      <div class="page-header">
-        <h1>{{ pageTitle }}</h1>
-        <div class="header-actions">
-          <el-button type="primary" @click="openCreateUserDialog" v-if="activeMenu === '1'">
-            <el-icon><Plus /></el-icon>
-            创建用户
+    <el-container>
+      <el-header class="page-header">
+        <div class="header-left">
+          <el-button type="text" @click="toggleSidebar" class="sidebar-toggle">
+            <el-icon><Menu /></el-icon>
           </el-button>
-          <el-button type="success" @click="syncUsers" v-if="activeMenu === '1'">
-            <el-icon><Refresh /></el-icon>
-            同步Emby用户
-          </el-button>
+          <el-breadcrumb separator="/">
+            <el-breadcrumb-item>首页</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ pageTitle }}</el-breadcrumb-item>
+          </el-breadcrumb>
         </div>
-      </div>
+        <div class="header-actions">
+          <el-dropdown>
+            <el-button type="info" round>
+              <el-icon><User /></el-icon>
+              <span>用户</span>
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="handleLogout">
+                  <el-icon><SwitchButton /></el-icon>
+                  <span>退出登录</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </el-header>
       
-      <!-- 搜索区域 -->
-      <div class="search-section" v-if="activeMenu === '1'">
-        <el-input
-          v-model="searchQuery"
-          placeholder="搜索用户名"
-          style="width: 300px; margin-right: 10px"
-          clearable
-        />
-        <el-select
-          v-model="statusFilter"
-          placeholder="选择状态"
-          style="width: 150px; margin-right: 10px"
-          clearable
-        >
-          <el-option label="启用" :value="true" />
-          <el-option label="禁用" :value="false" />
-        </el-select>
-        <el-select
-          v-model="expireFilter"
-          placeholder="选择过期状态"
-          style="width: 150px; margin-right: 10px"
-          clearable
-        >
-          <el-option label="未过期" :value="'active'" />
-          <el-option label="已过期" :value="'expired'" />
-        </el-select>
-        <el-button type="info" @click="fetchUsers">
-          <el-icon><Search /></el-icon>
-          查询
-        </el-button>
-      </div>
+      <el-main class="main-content">
+        <!-- 搜索区域 -->
+        <el-card class="search-card" v-if="activeMenu === '1'">
+          <el-form :inline="true" :model="searchForm" class="search-form">
+            <el-form-item>
+              <el-input
+                v-model="searchQuery"
+                placeholder="搜索用户名"
+                style="width: 280px"
+                clearable
+                prefix-icon="Search"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-select
+                v-model="statusFilter"
+                placeholder="选择状态"
+                style="width: 140px"
+                clearable
+              >
+                <el-option label="启用" :value="true" />
+                <el-option label="禁用" :value="false" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-select
+                v-model="expireFilter"
+                placeholder="选择过期状态"
+                style="width: 140px"
+                clearable
+              >
+                <el-option label="未过期" :value="'active'" />
+                <el-option label="已过期" :value="'expired'" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="fetchUsers">
+                <el-icon><Search /></el-icon>
+                查询
+              </el-button>
+            </el-form-item>
+          </el-form>
+          <div class="action-buttons-section" style="margin-top: 16px; display: flex; gap: 12px;">
+            <el-button type="primary" @click="openCreateUserDialog" round>
+              <el-icon><Plus /></el-icon>
+              创建用户
+            </el-button>
+            <el-button type="success" @click="syncUsers" round>
+              <el-icon><Refresh /></el-icon>
+              同步Emby用户
+            </el-button>
+          </div>
+        </el-card>
 
-      <!-- 用户列表 -->
-      <div v-if="activeMenu === '1'" class="user-list">
-        <el-table :data="users" style="width: 100%" v-loading="loading">
-          <el-table-column prop="emby_id" label="Emby ID" width="300" />
-          <el-table-column prop="name" label="用户名" width="150" />
-          <el-table-column prop="created_at" label="注册时间" width="200">
-            <template #default="scope">
-              {{ scope.row.created_at }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="is_active" label="状态" width="100">
-            <template #default="scope">
-              <el-tag :type="scope.row.is_active ? 'success' : 'danger'">
-                {{ scope.row.is_active ? '启用' : '禁用' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="expire_date" label="过期时间" width="180">
-            <template #default="scope">
-              {{ scope.row.expire_date ? scope.row.expire_date : '永久' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
-            <template #default="scope">
-              <div class="action-buttons">
-                <!-- 检查是否为受保护用户 -->
-                <template v-if="['emby_tpl_user', 'huxt', 'test'].includes(scope.row.name)">
-                  <el-button size="small" disabled class="action-btn">
-                    <el-icon><Edit /></el-icon>
-                    编辑
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :type="scope.row.is_active ? 'warning' : 'success'"
-                    disabled
-                    class="action-btn"
-                  >
-                    <el-icon v-if="scope.row.is_active"><Close /></el-icon>
-                    <el-icon v-else><Check /></el-icon>
-                    {{ scope.row.is_active ? '禁用' : '启用' }}
-                  </el-button>
-                  <el-button size="small" type="danger" disabled class="action-btn">
-                    <el-icon><Delete /></el-icon>
-                    删除
-                  </el-button>
-                </template>
-                <template v-else>
-                  <el-button size="small" @click="openEditUserDialog(scope.row)" class="action-btn">
-                    <el-icon><Edit /></el-icon>
-                    编辑
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :type="scope.row.is_active ? 'warning' : 'success'"
-                    @click="toggleUserStatus(scope.row)"
-                    class="action-btn"
-                  >
-                    <el-icon v-if="scope.row.is_active"><Close /></el-icon>
-                    <el-icon v-else><Check /></el-icon>
-                    {{ scope.row.is_active ? '禁用' : '启用' }}
-                  </el-button>
-                  <el-button size="small" type="danger" @click="deleteUser(scope.row.id)" class="action-btn">
-                    <el-icon><Delete /></el-icon>
-                    删除
-                  </el-button>
-                </template>
+        <!-- 用户列表 -->
+        <el-card class="user-list-card" v-if="activeMenu === '1'">
+          <template #header>
+            <div class="card-header">
+              <span>用户列表</span>
+              <span class="user-count">(共 {{ users.length }} 个用户)</span>
+            </div>
+          </template>
+          <el-table :data="paginatedUsers" style="width: 100%" v-loading="loading" stripe>
+            <el-table-column prop="emby_id" label="Emby ID" min-width="280" />
+            <el-table-column prop="name" label="用户名" min-width="140" />
+            <el-table-column prop="created_at" label="注册时间" min-width="180">
+              <template #default="scope">
+                {{ scope.row.created_at }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="is_active" label="状态" min-width="100">
+              <template #default="scope">
+                <el-tag :type="scope.row.is_active ? 'success' : 'danger'" effect="light">
+                  {{ scope.row.is_active ? '启用' : '禁用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="expire_date" label="过期时间" min-width="160">
+              <template #default="scope">
+                <span :class="{ 'expired': scope.row.expire_date && new Date(scope.row.expire_date) < new Date() }">
+                  {{ scope.row.expire_date ? scope.row.expire_date : '永久' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" min-width="220" fixed="right">
+              <template #default="scope">
+                <div class="action-buttons">
+                  <!-- 检查是否为受保护用户 -->
+                  <template v-if="['emby_tpl_user', 'huxt', 'test'].includes(scope.row.name)">
+                    <el-button size="small" disabled class="action-btn" link>
+                      <el-icon><Edit /></el-icon>
+                      编辑
+                    </el-button>
+                    <el-button
+                      size="small"
+                      :type="scope.row.is_active ? 'warning' : 'success'"
+                      disabled
+                      class="action-btn"
+                    >
+                      <el-icon v-if="scope.row.is_active"><Close /></el-icon>
+                      <el-icon v-else><Check /></el-icon>
+                      {{ scope.row.is_active ? '禁用' : '启用' }}
+                    </el-button>
+                    <el-button size="small" type="danger" disabled class="action-btn" link>
+                      <el-icon><Delete /></el-icon>
+                      删除
+                    </el-button>
+                  </template>
+                  <template v-else>
+                    <el-button size="small" @click="openEditUserDialog(scope.row)" class="action-btn" type="primary" link>
+                      <el-icon><Edit /></el-icon>
+                      编辑
+                    </el-button>
+                    <el-button
+                      size="small"
+                      :type="scope.row.is_active ? 'warning' : 'success'"
+                      @click="toggleUserStatus(scope.row)"
+                      class="action-btn"
+                    >
+                      <el-icon v-if="scope.row.is_active"><Close /></el-icon>
+                      <el-icon v-else><Check /></el-icon>
+                      {{ scope.row.is_active ? '禁用' : '启用' }}
+                    </el-button>
+                    <el-button size="small" type="danger" @click="deleteUser(scope.row.id)" class="action-btn" link>
+                      <el-icon><Delete /></el-icon>
+                      删除
+                    </el-button>
+                  </template>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination" v-if="users.length > 0">
+            <el-pagination
+              layout="prev, pager, next"
+              :total="users.length"
+              :page-size="10"
+              @current-change="handleCurrentChange"
+              style="margin-top: 20px; text-align: right"
+            />
+          </div>
+        </el-card>
+
+        <!-- 检查过期用户 -->
+        <div v-if="activeMenu === '2'" class="center-content">
+          <el-card class="expire-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>检查过期用户</span>
               </div>
             </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-
-
-      <!-- 检查过期用户 -->
-      <div v-if="activeMenu === '2'" class="expire-section">
-        <el-card class="expire-card">
-          <template #header>
-            <div class="card-header">
-              <span>检查过期用户</span>
+            <div class="expire-content">
+              <p>点击下方按钮检查并禁用过期用户</p>
+              <el-button type="primary" @click="checkExpiredUsers" size="large">
+                <el-icon><AlarmClock /></el-icon>
+                检查过期
+              </el-button>
             </div>
-          </template>
-          <div class="expire-content">
-            <p>点击下方按钮检查并禁用过期用户</p>
-            <el-button type="primary" @click="checkExpiredUsers">
-              <el-icon><AlarmClock /></el-icon>
-              检查过期
-            </el-button>
-          </div>
-        </el-card>
-      </div>
+          </el-card>
+        </div>
 
-      <!-- 检查 Emby 连接 -->
-      <div v-if="activeMenu === '3'" class="connection-section">
-        <el-card class="connection-card">
-          <template #header>
-            <div class="card-header">
-              <span>检查 Emby 连接</span>
+        <!-- 检查 Emby 连接 -->
+        <div v-if="activeMenu === '3'" class="center-content">
+          <el-card class="connection-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>检查 Emby 连接</span>
+              </div>
+            </template>
+            <div class="connection-content">
+              <p>点击下方按钮检查与 Emby 服务器的连接状态</p>
+              <el-button type="primary" @click="checkEmbyConnection" size="large">
+                <el-icon><Connection /></el-icon>
+                检查连接
+              </el-button>
+              <div v-if="connectionStatus" class="connection-result">
+                <el-alert
+                  :title="connectionStatus.connected ? '连接成功' : '连接失败'"
+                  :type="connectionStatus.connected ? 'success' : 'error'"
+                  :description="connectionStatus.message"
+                  show-icon
+                  style="margin-top: 20px"
+                />
+                <el-card v-if="connectionStatus.connected && connectionStatus.server_info" class="server-info-card" style="margin-top: 20px" shadow="hover">
+                  <template #header>
+                    <div class="card-header">
+                      <span>Emby 服务器信息</span>
+                    </div>
+                  </template>
+                  <el-descriptions :column="1" border>
+                    <el-descriptions-item label="服务器名称">{{ connectionStatus.server_info.name }}</el-descriptions-item>
+                    <el-descriptions-item label="版本">{{ connectionStatus.server_info.version }}</el-descriptions-item>
+                    <el-descriptions-item label="操作系统">{{ connectionStatus.server_info.operating_system }}</el-descriptions-item>
+                  </el-descriptions>
+                </el-card>
+              </div>
             </div>
-          </template>
-          <div class="connection-content">
-            <p>点击下方按钮检查与 Emby 服务器的连接状态</p>
-            <el-button type="primary" @click="checkEmbyConnection">
-              <el-icon><Connection /></el-icon>
-              检查连接
-            </el-button>
-            <div v-if="connectionStatus" class="connection-result">
-              <el-alert
-                :title="connectionStatus.connected ? '连接成功' : '连接失败'"
-                :type="connectionStatus.connected ? 'success' : 'error'"
-                :description="connectionStatus.message"
-                show-icon
-                style="margin-top: 20px"
-              />
-              <el-card v-if="connectionStatus.connected && connectionStatus.server_info" class="server-info-card" style="margin-top: 20px">
-                <template #header>
-                  <div class="card-header">
-                    <span>Emby 服务器信息</span>
-                  </div>
-                </template>
-                <el-descriptions :column="1">
-                  <el-descriptions-item label="服务器名称">{{ connectionStatus.server_info.name }}</el-descriptions-item>
-                  <el-descriptions-item label="版本">{{ connectionStatus.server_info.version }}</el-descriptions-item>
-                  <el-descriptions-item label="操作系统">{{ connectionStatus.server_info.operating_system }}</el-descriptions-item>
-                </el-descriptions>
-              </el-card>
-            </div>
-          </div>
-        </el-card>
-      </div>
-    </el-main>
+          </el-card>
+        </div>
+      </el-main>
+    </el-container>
 
     <!-- 创建用户对话框 -->
     <el-dialog
       v-model="createUserDialogVisible"
       title="创建用户"
       width="500px"
+      center
     >
       <el-form :model="createUserForm" :rules="createUserRules" ref="createUserFormRef">
         <el-form-item label="用户名" prop="name">
@@ -250,13 +312,14 @@
       v-model="editUserDialogVisible"
       title="编辑用户"
       width="500px"
+      center
     >
       <el-form :model="editUserForm" ref="editUserFormRef">
         <el-form-item label="用户名">
           <el-input v-model="editUserForm.name" disabled />
         </el-form-item>
         <el-form-item label="状态">
-          <el-tag :type="editUserForm.is_active ? 'success' : 'danger'">
+          <el-tag :type="editUserForm.is_active ? 'success' : 'danger'" effect="light">
             {{ editUserForm.is_active ? '启用' : '禁用' }}
           </el-tag>
         </el-form-item>
@@ -279,8 +342,7 @@
       </template>
     </el-dialog>
 
-
-  </div>
+  </el-container>
 </template>
 
 <script>
@@ -346,6 +408,9 @@ export default {
     const statusFilter = ref(null)
     const expireFilter = ref(null)
     const loading = ref(false)
+    const sidebarCollapsed = ref(false)
+    const searchForm = ref({})
+    const currentPage = ref(1)
     
     // 检查登录状态
     const checkLoginStatus = () => {
@@ -408,9 +473,24 @@ export default {
       }
     })
 
+    const paginatedUsers = computed(() => {
+      const pageSize = 10
+      const startIndex = (currentPage.value - 1) * pageSize
+      const endIndex = startIndex + pageSize
+      return users.value.slice(startIndex, endIndex)
+    })
+
     // 方法
     const handleMenuSelect = (key) => {
       activeMenu.value = key
+    }
+
+    const toggleSidebar = () => {
+      sidebarCollapsed.value = !sidebarCollapsed.value
+    }
+
+    const handleCurrentChange = (page) => {
+      currentPage.value = page
     }
 
     const formatDate = (dateString) => {
@@ -636,6 +716,7 @@ export default {
       isLoggedIn,
       activeMenu,
       users,
+      paginatedUsers,
       pageTitle,
       createUserDialogVisible,
       editUserDialogVisible,
@@ -650,7 +731,12 @@ export default {
       statusFilter,
       expireFilter,
       loading,
+      sidebarCollapsed,
+      searchForm,
+      currentPage,
       handleMenuSelect,
+      toggleSidebar,
+      handleCurrentChange,
       formatDate,
       fetchUsers,
       openCreateUserDialog,
@@ -690,18 +776,24 @@ body, html {
 
 .app-container {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   width: 100%;
   max-width: 100vw;
+  background-color: #f0f2f5;
 }
 
+/* 侧边栏样式 */
 .sidebar {
-  background-color: #303133;
+  background-color: #1989fa;
   color: #fff;
-  height: 100%;
+  transition: all 0.3s ease;
   overflow: hidden;
-  flex-shrink: 0;
+}
+
+.sidebar.collapsed {
+  width: 64px !important;
 }
 
 .logo {
@@ -710,114 +802,39 @@ body, html {
   text-align: center;
   font-size: 16px;
   font-weight: bold;
-  background-color: #1890ff;
+  background-color: #1989fa;
   color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.sidebar.collapsed .logo {
+  font-size: 20px;
 }
 
 .el-menu-vertical-demo {
   height: calc(100% - 60px);
   border-right: none;
-  background-color: #303133;
+  background-color: #1989fa;
 }
 
 .el-menu-item {
-  color: #fff;
+  color: rgba(255, 255, 255, 0.9);
   height: 50px;
   line-height: 50px;
   font-size: 14px;
   margin: 0 !important;
+  transition: all 0.3s ease;
 }
 
 .el-menu-item:hover {
-  background-color: #409eff !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
   color: white !important;
 }
 
 .el-menu-item.is-active {
-  background-color: #409eff !important;
+  background-color: rgba(255, 255, 255, 0.3) !important;
   color: white !important;
-}
-
-/* 操作按钮样式 */
-.action-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.action-btn {
-  margin: 0 !important;
-}
-
-.main-content {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-  background-color: #f5f7fa;
-  min-width: 0;
-  max-width: none;
-  width: 100%;
-}
-
-/* 覆盖Element Plus默认样式 */
-.el-container {
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-.el-main {
-  padding: 20px !important;
-  width: 100% !important;
-  max-width: none !important;
-  margin: 0 !important;
-  min-width: 0 !important;
-  flex: 1 !important;
-}
-
-/* 调整用户列表容器 */
-.user-list {
-  background-color: #fff;
-  border-radius: 4px;
-  padding: 20px;
-  overflow-x: auto;
-  width: 100%;
-  max-width: none;
-  box-sizing: border-box;
-}
-
-/* 确保表格占满宽度 */
-.el-table {
-  width: 100% !important;
-  max-width: none !important;
-  box-sizing: border-box;
-  margin: 0 !important;
-}
-
-.el-table__header-wrapper,
-.el-table__body-wrapper {
-  width: 100% !important;
-  max-width: none !important;
-}
-
-.el-table__row {
-  width: 100% !important;
-}
-
-.el-table-column {
-  flex-shrink: 0;
-}
-
-/* 搜索区域样式 */
-.search-section {
-  display: flex;
-  align-items: center;
-  margin-bottom: 20px;
-  width: 100%;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
 /* 页面头部样式 */
@@ -825,91 +842,166 @@ body, html {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 0 20px;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  height: 60px;
+  transition: all 0.3s ease;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.sidebar-toggle {
+  margin-right: 20px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* 面包屑导航样式 */
+.el-breadcrumb {
+  font-size: 14px;
+}
+
+.el-breadcrumb__item:last-child {
+  color: #1989fa;
+  font-weight: 500;
+}
+
+/* 主内容区样式 */
+.main-content {
+  padding: 20px;
+  background-color: #f0f2f5;
+  min-height: calc(100vh - 120px);
+}
+
+/* 搜索卡片样式 */
+.search-card {
   margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 10px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+}
+
+.search-form {
   width: 100%;
 }
 
-.page-header h1 {
-  font-size: 20px;
-  color: #303133;
-  margin: 0;
+/* 用户列表卡片样式 */
+.user-list-card {
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-/* 同步、检查过期用户和检查连接区域样式 */
-.sync-section,
-.expire-section,
-.connection-section {
+/* 表格样式 */
+.el-table {
+  width: 100% !important;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.el-table--striped .el-table__row--striped {
+  background-color: #fafafa;
+}
+
+.el-table th {
+  background-color: #f5f7fa;
+  font-weight: 500;
+}
+
+/* 操作按钮样式 */
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.action-btn {
+  margin: 0 !important;
+}
+
+/* 居中内容样式 */
+.center-content {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: calc(100vh - 120px);
+  min-height: calc(100vh - 120px);
 }
 
 /* 卡片样式 */
-.sync-card,
 .expire-card,
 .connection-card {
   width: 600px;
   text-align: center;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.sync-content,
 .expire-content,
 .connection-content {
   padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
 }
 
-.sync-content p,
 .expire-content p,
 .connection-content p {
-  margin-bottom: 30px;
   font-size: 16px;
   color: #606266;
+  margin-bottom: 0;
 }
 
-.connection-result {
-  margin-top: 30px;
-}
-
+/* 服务器信息卡片样式 */
 .server-info-card {
   margin-top: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+}
+
+/* 对话框样式 */
+.el-dialog__header {
+  background-color: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
 }
 
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
 }
 
-.login-page {
-  min-height: 100vh;
-  background-color: #f5f7fa;
+/* 过期时间样式 */
+.expired {
+  color: #f56c6c;
+  font-weight: 500;
 }
 
 /* 响应式设计 */
 @media screen and (max-width: 768px) {
   .app-container {
     flex-direction: column;
-    max-width: 100%;
-    box-shadow: none;
   }
 
-  .el-aside {
+  .sidebar {
     width: 100% !important;
     height: auto;
-  }
-
-  .logo {
-    height: 50px;
-    line-height: 50px;
-    font-size: 16px;
   }
 
   .el-menu-vertical-demo {
     display: flex;
     height: auto;
     flex-direction: row;
+    overflow-x: auto;
   }
 
   .el-menu-item {
@@ -917,40 +1009,88 @@ body, html {
     text-align: center;
     height: 45px;
     line-height: 45px;
-  }
-
-  .main-content {
-    height: calc(100vh - 100px);
-    padding: 10px;
+    white-space: nowrap;
   }
 
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 10px;
+    padding: 10px;
+    height: auto;
   }
 
-  .search-section {
+  .header-left {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
   }
 
-  .action-buttons {
+  .main-content {
+    padding: 10px;
+    min-height: calc(100vh - 160px);
+  }
+
+  .search-form {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .sync-card,
   .expire-card,
   .connection-card {
     width: 100%;
-    margin: 0 10px;
+    margin: 0;
   }
 
-  .sync-content,
   .expire-content,
   .connection-content {
     padding: 20px;
   }
+
+  .action-buttons {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .el-button {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+}
+
+/* 动画效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 加载状态样式 */
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 </style>
