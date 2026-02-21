@@ -1,0 +1,73 @@
+# 后端忽略文件
+backend/__pycache__/
+backend/.env
+backend/*.pyc
+
+# 前端忽略文件
+frontend/node_modules/
+frontend/dist/
+frontend/.vscode/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# 版本控制相关
+.git/
+
+# IDE 相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.temp
+temp/
+tmp/
+
+# 构建产物
+dist/
+build/
+
+# 包管理文件
+*.lock
+package-lock.json
+
+# Docker 相关
+# Dockerfile
+# .dockerignore
+# docker-compose.yml
+
+# 操作系统相关
+Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 测试相关
+coverage/
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+
+# 文档相关
+*.rst
+*.md
+README*

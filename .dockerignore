@@ -1,0 +1,28 @@
+# 后端排除文件
+backend/__pycache__/
+backend/.env
+
+# 前端排除文件
+frontend/node_modules/
+frontend/.vscode/
+frontend/.gitignore
+frontend/README.md
+frontend/package-lock.json
+
+# 版本控制相关
+.git/
+.gitignore
+
+# IDE 相关
+.vscode/
+.idea/
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+
+# 构建产物（前端构建会在 Dockerfile 中单独处理）
+frontend/dist/
