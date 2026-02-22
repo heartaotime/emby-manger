@@ -25,7 +25,7 @@ import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
 // 使用相对路径，与App.vue保持一致
-axios.defaults.baseURL = '/api'
+// axios.defaults.baseURL = '/api'
 
 export default {
   name: 'Login',
@@ -51,7 +51,7 @@ export default {
         loading.value = true
         console.log('发送登录请求:', loginForm.value)
         
-        const response = await axios.post('/login', loginForm.value)
+        const response = await axios.post('/api/auth/login', loginForm.value)
         console.log('登录响应:', response)
         if (response.data.success) {
           // 存储token到localStorage

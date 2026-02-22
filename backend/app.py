@@ -14,6 +14,7 @@ if os.path.exists(env_path):
                 os.environ[key] = value
 
 app = Flask(__name__)
+
 # 配置CORS，允许所有跨域请求
 CORS(app, resources={r"/api/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 
@@ -25,12 +26,14 @@ from api.auth import auth_bp
 from api.users import users_bp
 from api.emby import emby_bp
 from api.plugins import plugins_bp
+from api.logs import logs_bp
 
-# 注册蓝图
-app.register_blueprint(auth_bp)
-app.register_blueprint(users_bp)
-app.register_blueprint(emby_bp)
-app.register_blueprint(plugins_bp)
+# 注册蓝图，为每个模块设置具体的前缀，方便统一管理
+app.register_blueprint(auth_bp, url_prefix='/api/auth')
+app.register_blueprint(users_bp, url_prefix='/api/users')
+app.register_blueprint(emby_bp, url_prefix='/api/emby')
+app.register_blueprint(plugins_bp, url_prefix='/api/plugins')
+app.register_blueprint(logs_bp, url_prefix='/api/logs')
 
 # 初始化数据库
 init_db()

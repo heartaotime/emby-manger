@@ -48,8 +48,12 @@ def token_required(f):
             # 解码token
             data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
             current_user = data['username']
-        except:
+        except jwt.ExpiredSignatureError:
+            return jsonify({'success': False, 'message': '令牌已过期'}), 401
+        except jwt.InvalidTokenError:
             return jsonify({'success': False, 'message': '无效的认证令牌'}), 401
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'认证错误: {str(e)}'}), 401
         
         return f(current_user, *args, **kwargs)
     return decorated

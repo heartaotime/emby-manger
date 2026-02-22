@@ -3,10 +3,10 @@ from utils.auth import token_required
 from services.user_service import sync_users, get_users, create_user, update_user, update_user_status, delete_user, check_expire
 
 # 创建蓝图
-users_bp = Blueprint('users', __name__, url_prefix='/api')
+users_bp = Blueprint('users', __name__, url_prefix='')
 
 # 用户同步路由
-@users_bp.route('/sync/users', methods=['POST'])
+@users_bp.route('/sync', methods=['POST'])
 @token_required
 def sync_users_route(current_user):
     success, message = sync_users()
@@ -16,7 +16,7 @@ def sync_users_route(current_user):
         return jsonify({'success': False, 'message': message}), 500
 
 # 获取所有用户
-@users_bp.route('/users', methods=['GET'])
+@users_bp.route('', methods=['GET'])
 @token_required
 def get_users_route(current_user):
     try:
@@ -25,13 +25,17 @@ def get_users_route(current_user):
         status_filter = request.args.get('status', None)
         expire_status = request.args.get('expire_status', None)
         
-        users = get_users(search_query, status_filter, expire_status)
-        return jsonify({'success': True, 'data': users})
+        # 获取分页参数
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 10))
+        
+        result = get_users(search_query, status_filter, expire_status, page, page_size)
+        return jsonify({'success': True, 'data': result['data'], 'total': result['total'], 'page': result['page'], 'page_size': result['page_size']})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
 # 创建用户
-@users_bp.route('/users', methods=['POST'])
+@users_bp.route('', methods=['POST'])
 @token_required
 def create_user_route(current_user):
     try:
@@ -45,7 +49,7 @@ def create_user_route(current_user):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 # 更新用户（只修改过期时间）
-@users_bp.route('/users/<int:user_id>', methods=['PUT'])
+@users_bp.route('/<int:user_id>', methods=['PUT'])
 @token_required
 def update_user_route(current_user, user_id):
     try:
@@ -59,7 +63,7 @@ def update_user_route(current_user, user_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 # 启用/禁用用户
-@users_bp.route('/users/<int:user_id>/status', methods=['PUT'])
+@users_bp.route('/<int:user_id>/status', methods=['PUT'])
 @token_required
 def update_user_status_route(current_user, user_id):
     try:
@@ -77,7 +81,7 @@ def update_user_status_route(current_user, user_id):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 # 删除用户
-@users_bp.route('/users/<int:user_id>', methods=['DELETE'])
+@users_bp.route('/<int:user_id>', methods=['DELETE'])
 @token_required
 def delete_user_route(current_user, user_id):
     try:

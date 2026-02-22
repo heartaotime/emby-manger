@@ -1,5 +1,6 @@
 import pymysql
 from config.database import db_config
+from .logger import logger
 
 def get_db_connection():
     """
@@ -36,7 +37,7 @@ def init_db():
         conn.commit()
         cursor.close()
         conn.close()
-        print("数据库初始化成功")
+        logger.info("数据库初始化成功")
     except Exception as e:
-        print(f"数据库初始化失败: {e}")
-        print("服务将继续运行，但数据库相关功能可能受限")
+        logger.error(f"数据库初始化失败: {e}")
+        logger.warning("服务将继续运行，但数据库相关功能可能受限")

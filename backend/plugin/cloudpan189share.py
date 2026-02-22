@@ -10,10 +10,28 @@ import re
 import pandas as pd
 import random
 
+# 导入日志工具库
+import sys
+import os
+
+# 添加backend目录到Python路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utils.logger import get_plugin_logger
+
+# 创建日志记录器实例
+logger = get_plugin_logger('cloudpan189share')
+
 # 加载环境变量
 load_dotenv()
 
-# 确保data目录存在
+# 确保插件数据目录存在
+plugin_name = 'cloudpan189share'
+data_dir = os.path.join('data', 'plugins', plugin_name)
+if not os.path.exists(data_dir):
+    os.makedirs(data_dir, exist_ok=True)
+
+# 确保data目录存在（保留原有结构）
 if not os.path.exists('data'):
     os.makedirs('data')
 
@@ -53,10 +71,10 @@ def get_media_info(name):
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
-        print(f"API请求错误: {str(e)}")
+        logger.error(f"API请求错误: {str(e)}")
         return {}
     except json.JSONDecodeError as e:
-        print(f"解析API响应错误: {str(e)}")
+        logger.error(f"解析API响应错误: {str(e)}")
         return {}
 
 # 判断剧集是否还在更新
@@ -70,7 +88,7 @@ def is_show_still_running(media_info):
 # 获取总记录数
 cursor.execute('SELECT COUNT(*) FROM mount_points WHERE id > ?', (ID_START,))
 total_records = cursor.fetchone()[0]
-print(f"总记录数 (id > {ID_START}): {total_records}")
+logger.info(f"总记录数 (id > {ID_START}): {total_records}")
 
 # 分页查询参数
 page_size = 100  # 每页处理100条记录
@@ -91,7 +109,7 @@ while current_record < total_records:
     for record in batch_records:
         current_record += 1
         id_, name = record
-        print(f"\n=== 处理第 {current_record}/{total_records} 个: {name} ===")
+        logger.info(f"\n=== 处理第 {current_record}/{total_records} 个: {name} ===")
         
         try:
             # 获取媒体信息
@@ -125,14 +143,14 @@ while current_record < total_records:
                             'refresh_interval': refresh_interval
                         }
                         running_shows.append(show_info)
-                        print(f"✓ {name} 正在更新中")
-                        print(f"  识别名称: {recognized_name}")
-                        print(f"  识别年份: {year}")
-                        print(f"  更新状态: {status}")
-                        print(f"  刷新间隔: {refresh_interval}分钟")
+                        logger.info(f"✓ {name} 正在更新中")
+                        logger.info(f"  识别名称: {recognized_name}")
+                        logger.info(f"  识别年份: {year}")
+                        logger.info(f"  更新状态: {status}")
+                        logger.info(f"  刷新间隔: {refresh_interval}分钟")
                         
                         # 实时写入Excel文件
-                        excel_file = 'data/需要追更的剧集.xlsx'
+                        excel_file = os.path.join(data_dir, '需要追更的剧集.xlsx')
                         # 准备当前数据
                         excel_data = []
                         for show in running_shows:
@@ -147,12 +165,12 @@ while current_record < total_records:
                         try:
                             df = pd.DataFrame(excel_data)
                             df.to_excel(excel_file, index=False)
-                            print(f"  已将 {name} 写入Excel文件")
+                            logger.info(f"  已将 {name} 写入Excel文件")
                         except Exception as e:
-                            print(f"  写入Excel文件失败: {str(e)}")
+                            logger.error(f"  写入Excel文件失败: {str(e)}")
                         
                         # 实时更新SQL文件
-                        sql_file = 'data/auto_refresh_update.sql'
+                        sql_file = os.path.join(data_dir, 'auto_refresh_update.sql')
                         try:
                             with open(sql_file, 'w', encoding='utf-8') as f:
                                 f.write('-- 自动刷新设置更新SQL\n')
@@ -162,9 +180,9 @@ while current_record < total_records:
                                     show_refresh_interval = show['refresh_interval']
                                     sql = f"UPDATE mount_points SET enable_auto_refresh = 1, auto_refresh_days = 365, auto_refresh_begin_at = '2026-01-01 00:00:00', refresh_interval = {show_refresh_interval} WHERE id = {show_id};\n"
                                     f.write(sql)
-                            print(f"  已更新SQL文件: {sql_file}")
+                            logger.info(f"  已更新SQL文件: {sql_file}")
                         except Exception as e:
-                            print(f"  更新SQL文件失败: {str(e)}")
+                            logger.error(f"  更新SQL文件失败: {str(e)}")
                         
                         # 如果启用直接更新，只更新当前剧集
                         if DIRECT_UPDATE:
@@ -172,35 +190,35 @@ while current_record < total_records:
                                 sql = f"UPDATE mount_points SET enable_auto_refresh = 1, auto_refresh_days = 365, auto_refresh_begin_at = '2026-01-01 00:00:00', refresh_interval = {refresh_interval} WHERE id = {id_};"
                                 cursor.execute(sql)
                                 conn.commit()
-                                print(f"  已直接更新数据库: ID={id_}")
+                                logger.info(f"  已直接更新数据库: ID={id_}")
                             except Exception as e:
-                                print(f"  直接更新数据库失败: {str(e)}")
+                                logger.error(f"  直接更新数据库失败: {str(e)}")
                                 conn.rollback()
                     else:
-                        print(f"✗ {name} 未在更新中")
-                        print(f"  识别名称: {recognized_name}")
-                        print(f"  识别年份: {year}")
-                        print(f"  更新状态: {status}")
+                        logger.info(f"✗ {name} 未在更新中")
+                        logger.info(f"  识别名称: {recognized_name}")
+                        logger.info(f"  识别年份: {year}")
+                        logger.info(f"  更新状态: {status}")
                 except Exception as e:
-                    print(f"✗ 处理识别信息时出错: {str(e)}")
-                    print(f"  原始名称: {name}")
+                    logger.error(f"✗ 处理识别信息时出错: {str(e)}")
+                    logger.error(f"  原始名称: {name}")
             else:
-                print(f"✗ 无法获取媒体信息: {name}")
+                logger.error(f"✗ 无法获取媒体信息: {name}")
         except Exception as e:
-            print(f"✗ 处理 {name} 时出错: {str(e)}")
+            logger.error(f"✗ 处理 {name} 时出错: {str(e)}")
 
 # 输出结果
-print("\n=== 正在更新的剧集列表 ===")
+logger.info("\n=== 正在更新的剧集列表 ===")
 for show in running_shows:
-    print(f"ID: {show['id']}")
-    print(f"名称: {show['name']}")
-    print(f"原始名称: {show['original_name']}")
-    print(f"状态: {show['status']}")
-    print()
+    logger.info(f"ID: {show['id']}")
+    logger.info(f"名称: {show['name']}")
+    logger.info(f"原始名称: {show['original_name']}")
+    logger.info(f"状态: {show['status']}")
+    logger.info("")
 
 # 检查是否有需要追更的剧集
 if running_shows:
-    print(f"\n已将需要追更的剧集信息实时保存到: data/需要追更的剧集.xlsx")
+    logger.info(f"\n已将需要追更的剧集信息实时保存到: data/需要追更的剧集.xlsx")
     
     # 生成SQL更新文件
     sql_file = 'data/auto_refresh_update.sql'
@@ -213,19 +231,19 @@ if running_shows:
                 show_refresh_interval = show['refresh_interval']
                 sql = f"UPDATE mount_points SET enable_auto_refresh = true, auto_refresh_days = 365, auto_refresh_begin_at = '2000-01-01 00:00:00', refresh_interval = {show_refresh_interval} WHERE id = {show_id};\n"
                 f.write(sql)
-            print(f"\n已生成SQL更新文件: {sql_file}")
+            logger.info(f"\n已生成SQL更新文件: {sql_file}")
     except Exception as e:
-        print(f"生成SQL文件失败: {str(e)}")
+        logger.error(f"生成SQL文件失败: {str(e)}")
 else:
-    print("\n没有需要追更的剧集")
+    logger.info("\n没有需要追更的剧集")
     # 如果没有需要追更的剧集，创建一个空的Excel文件
     excel_file = 'data/需要追更的剧集.xlsx'
     try:
         df = pd.DataFrame(columns=['ID', '原始名称', '识别名称', '识别年份'])
         df.to_excel(excel_file, index=False)
-        print(f"已创建空的Excel文件: {excel_file}")
+        logger.info(f"已创建空的Excel文件: {excel_file}")
     except Exception as e:
-        print(f"创建空Excel文件失败: {str(e)}")
+        logger.error(f"创建空Excel文件失败: {str(e)}")
 
 # 关闭数据库连接
 conn.close()

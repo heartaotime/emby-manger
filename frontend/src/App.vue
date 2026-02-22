@@ -45,6 +45,12 @@
             <span>189Share 管理</span>
           </template>
         </el-menu-item>
+        <el-menu-item index="5">
+          <el-icon><Document /></el-icon>
+          <template #title>
+            <span>日志管理</span>
+          </template>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -138,7 +144,7 @@
           <template #header>
             <div class="card-header">
               <span>用户列表</span>
-              <span class="user-count">(共 {{ users.length }} 个用户)</span>
+              <span class="user-count">(共 {{ totalUsers }} 个用户)</span>
             </div>
           </template>
           <el-table :data="paginatedUsers" style="width: 100%" v-loading="loading" stripe>
@@ -211,14 +217,28 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="pagination" v-if="users.length > 0">
-            <el-pagination
-              layout="prev, pager, next"
-              :total="users.length"
-              :page-size="10"
-              @current-change="handleCurrentChange"
-              style="margin-top: 20px; text-align: right"
-            />
+          <div class="pagination" v-if="totalUsers > 0">
+            <div class="pagination-controls">
+              <div class="page-size-selector">
+                <el-select v-model="pageSize" @change="handlePageSizeChange" style="width: 120px;">
+                  <el-option label="10条/页" :value="10" />
+                  <el-option label="20条/页" :value="20" />
+                  <el-option label="50条/页" :value="50" />
+                  <el-option label="100条/页" :value="100" />
+                  <el-option label="自定义" :value="'custom'" />
+                </el-select>
+                <el-input-number v-if="pageSize === 'custom'" v-model="customPageSize" @change="handleCustomPageSizeChange" :min="1" :max="1000" style="width: 100px; margin-left: 10px;" />
+              </div>
+              <el-pagination
+                layout="prev, pager, next, jumper"
+                :total="totalUsers"
+                v-model:current-page="currentPage"
+                :page-size="actualPageSize"
+                @current-change="handleCurrentChange"
+                :pager-count="5"
+                hide-on-single-page
+              />
+            </div>
           </div>
         </el-card>
 
@@ -328,6 +348,65 @@
             </div>
           </el-card>
         </div>
+
+        <!-- 日志管理 -->
+        <div v-if="activeMenu === '5'" class="full-width-content">
+          <el-card class="logs-management-card" shadow="hover" style="width: 100%;">
+            <template #header>
+              <div class="card-header">
+                <span>日志管理</span>
+              </div>
+            </template>
+            <div class="logs-management-content">
+              <div class="logs-controls" style="margin-bottom: 20px; display: flex; gap: 16px; align-items: center;">
+                <el-form :inline="true" :model="logsForm" class="logs-form">
+                  <el-form-item label="日志类型">
+                    <el-radio-group v-model="logsForm.logType" @change="handleLogTypeChange">
+                      <el-radio label="all">所有日志</el-radio>
+                      <el-radio label="plugin">插件日志</el-radio>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="插件选择" v-if="logsForm.logType === 'plugin'">
+                    <el-select v-model="logsForm.pluginName" placeholder="选择插件" style="width: 200px;">
+                      <el-option v-for="plugin in availablePlugins" :key="plugin" :label="plugin" :value="plugin" />
+                    </el-select>
+                  </el-form-item>
+                </el-form>
+                <el-button type="primary" @click="fetchLogs" size="large">
+                  <el-icon><Refresh /></el-icon>
+                  刷新日志
+                </el-button>
+                <el-button type="danger" @click="clearLogs" size="large">
+                  <el-icon><Delete /></el-icon>
+                  清理日志
+                </el-button>
+              </div>
+              <div class="logs-section" style="margin-top: 20px;">
+                <el-card class="logs-card" shadow="hover">
+                  <template #header>
+                    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                      <span>{{ logsForm.logType === 'all' ? '所有日志' : `${logsForm.pluginName || '插件'}日志` }}</span>
+                      <el-switch 
+                        v-model="logsAutoScrollEnabled" 
+                        active-text="自动滚动" 
+                        inactive-text="手动滚动"
+                        style="margin-left: 10px;"
+                      />
+                    </div>
+                  </template>
+                  <div class="logs-container" v-loading="loadingLogs">
+                    <el-scrollbar height="500px" ref="logsScrollbarRef">
+                      <pre v-if="logsContent" class="logs-content">{{ logsContent }}</pre>
+                      <div v-else class="no-logs">
+                        {{ logsForm.logType === 'all' ? '暂无日志' : '请选择插件并刷新日志' }}
+                      </div>
+                    </el-scrollbar>
+                  </div>
+                </el-card>
+              </div>
+            </div>
+          </el-card>
+        </div>
       </el-main>
     </el-container>
 
@@ -408,7 +487,7 @@ import axios from 'axios'
 import Login from './components/Login.vue'
 
 // 配置 axios 基础路径
-axios.defaults.baseURL = '/api'
+// axios.defaults.baseURL = '/api'
 
 // 添加请求拦截器，携带token
 axios.interceptors.request.use(
@@ -465,10 +544,23 @@ export default {
     const sidebarCollapsed = ref(false)
     const searchForm = ref({})
     const currentPage = ref(1)
+    const pageSize = ref(10)
+    const customPageSize = ref(10)
     const cloudpan189shareLogs = ref('')
     const loadingCloudPanLogs = ref(false)
     const autoScrollEnabled = ref(true)
     const scrollbarRef = ref(null)
+    
+    // 日志管理相关数据
+    const logsForm = ref({
+      logType: 'all',
+      pluginName: ''
+    })
+    const logsContent = ref('')
+    const loadingLogs = ref(false)
+    const logsAutoScrollEnabled = ref(true)
+    const logsScrollbarRef = ref(null)
+    const availablePlugins = ref([])
     
     // 检查登录状态
     const checkLoginStatus = () => {
@@ -528,20 +620,54 @@ export default {
         case '2': return '检查过期用户'
         case '3': return '检查 Emby 连接'
         case '4': return '189Share 管理'
+        case '5': return '日志管理'
         default: return '用户管理'
       }
     })
 
     const paginatedUsers = computed(() => {
-      const pageSize = 10
-      const startIndex = (currentPage.value - 1) * pageSize
-      const endIndex = startIndex + pageSize
+      const startIndex = (currentPage.value - 1) * (pageSize.value === 'custom' ? customPageSize.value : pageSize.value)
+      const endIndex = startIndex + (pageSize.value === 'custom' ? customPageSize.value : pageSize.value)
       return users.value.slice(startIndex, endIndex)
     })
 
+    const actualPageSize = computed(() => {
+      return pageSize.value === 'custom' ? customPageSize.value : pageSize.value
+    })
+
+    const handlePageSizeChange = (size) => {
+      pageSize.value = size
+      currentPage.value = 1 // 重置为第一页
+      fetchUsers() // 重新获取用户列表
+    }
+
+    const handleCustomPageSizeChange = (size) => {
+      if (size && size > 0) {
+        customPageSize.value = size
+        currentPage.value = 1 // 重置为第一页
+        fetchUsers() // 重新获取用户列表
+      }
+    }
+
     // 方法
     const handleMenuSelect = (key) => {
+      // 切换菜单时关闭SSE连接
+      if (key !== '4') {
+        closeSSEConnection()
+      }
+      // 切换菜单时关闭日志SSE连接
+      if (key !== '5') {
+        closeLogsSSEConnection()
+      }
       activeMenu.value = key
+      // 切换到189share管理页面时建立SSE连接
+      if (key === '4') {
+        establishSSEConnection()
+      }
+      // 切换到日志管理页面时建立SSE连接
+      if (key === '5') {
+        establishLogsSSEConnection()
+      }
     }
 
     const toggleSidebar = () => {
@@ -550,6 +676,7 @@ export default {
 
     const handleCurrentChange = (page) => {
       currentPage.value = page
+      fetchUsers() // 重新获取用户列表
     }
 
     const formatDate = (dateString) => {
@@ -558,11 +685,16 @@ export default {
       return date.toLocaleString()
     }
 
+    const totalUsers = ref(0)
+
     const fetchUsers = async () => {
       try {
         loading.value = true
         // 构建请求参数
-        const params = {}
+        const params = {
+          page: currentPage.value,
+          page_size: actualPageSize.value
+        }
         if (searchQuery.value) {
           params.search = searchQuery.value
         }
@@ -572,9 +704,10 @@ export default {
         if (expireFilter.value !== null && expireFilter.value !== undefined) {
           params.expire_status = expireFilter.value
         }
-        const response = await axios.get('/users', { params })
+        const response = await axios.get('/api/users', { params })
         if (response.data.success) {
           users.value = response.data.data
+          totalUsers.value = response.data.total
         }
       } catch (error) {
         const errorMessage = error.response?.data?.message || '获取用户列表失败'
@@ -600,7 +733,7 @@ export default {
       try {
         loading.value = true
         await createUserFormRef.value.validate()
-        const response = await axios.post('/users', createUserForm.value)
+        const response = await axios.post('/api/users', createUserForm.value)
         if (response.data.success) {
           ElMessage.success('用户创建成功')
           createUserDialogVisible.value = false
@@ -637,7 +770,7 @@ export default {
       try {
         loading.value = true
         await editUserFormRef.value.validate()
-        const response = await axios.put(`/users/${editUserForm.value.id}`, editUserForm.value)
+        const response = await axios.put(`/api/users/${editUserForm.value.id}`, editUserForm.value)
         if (response.data.success) {
           ElMessage.success('用户更新成功')
           editUserDialogVisible.value = false
@@ -657,7 +790,7 @@ export default {
     const toggleUserStatus = async (user) => {
       try {
         loading.value = true
-        const response = await axios.put(`/users/${user.id}/status`, {
+        const response = await axios.put(`/api/users/${user.id}/status`, {
           is_active: !user.is_active
         })
         if (response.data.success) {
@@ -684,7 +817,7 @@ export default {
         })
         
         loading.value = true
-        const response = await axios.delete(`/users/${userId}`)
+        const response = await axios.delete(`/api/users/${userId}`)
         if (response.data.success) {
           ElMessage.success('用户删除成功')
           fetchUsers()
@@ -705,7 +838,7 @@ export default {
     const syncUsers = async () => {
       try {
         loading.value = true
-        const response = await axios.post('/sync/users')
+        const response = await axios.post('/api/users/sync')
         if (response.data.success) {
           ElMessage.success(response.data.message)
           fetchUsers()
@@ -724,7 +857,7 @@ export default {
     const checkExpiredUsers = async () => {
       try {
         loading.value = true
-        const response = await axios.post('/check-expire')
+        const response = await axios.post('/api/users/check-expire')
         if (response.data.success) {
           ElMessage.success(response.data.message)
           fetchUsers()
@@ -743,7 +876,7 @@ export default {
     const checkEmbyConnection = async () => {
       try {
         loading.value = true
-        const response = await axios.get('/emby/check-connection')
+        const response = await axios.get('/api/emby/check-connection')
         if (response.data.success) {
           connectionStatus.value = {
             connected: response.data.connected,
@@ -763,16 +896,20 @@ export default {
       }
     }
 
+    // SSE连接对象
+    const sseConnection = ref(null)
+
     // 执行CloudPan 189Share脚本
     const executeCloudPan189ShareScript = async () => {
       try {
         loading.value = true
-        const response = await axios.post('/189share/execute')
+        const response = await axios.post('/api/plugins/189share/execute')
         if (response.data.success) {
           ElMessage.success(response.data.message)
-          // 执行后自动获取日志
+          // 执行后自动获取日志并建立SSE连接
           setTimeout(() => {
             fetchCloudPan189ShareLogs()
+            establishSSEConnection()
           }, 2000)
         } else {
           ElMessage.error(response.data.message)
@@ -790,7 +927,7 @@ export default {
     const fetchCloudPan189ShareLogs = async () => {
       try {
         loadingCloudPanLogs.value = true
-        const response = await axios.get('/189share/logs')
+        const response = await axios.get('/api/plugins/189share/logs')
         if (response.data.success) {
           cloudpan189shareLogs.value = response.data.logs
           console.log('获取到的日志内容:', response.data.logs)
@@ -798,9 +935,7 @@ export default {
           // 自动滚动到底部
           if (autoScrollEnabled.value) {
             setTimeout(() => {
-              if (scrollbarRef.value) {
-                scrollbarRef.value.wrap.scrollTop = scrollbarRef.value.wrap.scrollHeight
-              }
+              scrollToBottom()
             }, 100)
           }
         } else {
@@ -816,11 +951,95 @@ export default {
       }
     }
 
+    // 滚动到底部函数
+    const scrollToBottom = () => {
+      setTimeout(() => {
+        if (scrollbarRef.value) {
+          // 尝试不同的方式访问滚动容器
+          const scrollContainer = scrollbarRef.value.wrap || scrollbarRef.value.$refs?.wrap || document.querySelector('.el-scrollbar__wrap')
+          if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight
+            console.log('自动滚动到底部')
+          } else {
+            console.error('无法找到滚动容器')
+          }
+        } else {
+          console.error('scrollbarRef未定义')
+        }
+      }, 50)
+    }
+
+    // 建立SSE连接
+    const establishSSEConnection = () => {
+      // 关闭现有的SSE连接
+      if (sseConnection.value) {
+        sseConnection.value.close()
+        sseConnection.value = null
+      }
+
+      // 创建新的SSE连接
+        const token = localStorage.getItem('token')
+        console.log('建立SSE连接，token:', token)
+        try {
+          sseConnection.value = new EventSource(`/api/plugins/189share/logs/sse?token=${token}`)
+
+        // 处理消息事件
+        sseConnection.value.onmessage = (event) => {
+          if (event.data && event.data !== '\n') {
+            console.log('收到SSE消息:', event.data)
+            // 添加新的日志内容
+            cloudpan189shareLogs.value += '\n' + event.data
+            
+            // 自动滚动到底部
+            if (autoScrollEnabled.value) {
+              scrollToBottom()
+            }
+          }
+        }
+
+        // 处理打开事件
+        sseConnection.value.onopen = (event) => {
+          console.log('SSE连接已打开:', event)
+        }
+
+        // 处理错误事件
+        sseConnection.value.onerror = (error) => {
+          console.error('SSE连接错误:', error)
+          console.error('SSE连接状态:', sseConnection.value?.readyState)
+          // 关闭连接
+          if (sseConnection.value) {
+            sseConnection.value.close()
+            sseConnection.value = null
+          }
+        }
+
+        console.log('SSE连接已建立')
+      } catch (error) {
+        console.error('建立SSE连接时出错:', error)
+      }
+    }
+
+    // 关闭SSE连接
+    const closeSSEConnection = () => {
+      console.log('尝试关闭SSE连接:', sseConnection.value)
+      if (sseConnection.value) {
+        try {
+          sseConnection.value.close()
+          sseConnection.value = null
+          console.log('SSE连接已关闭')
+        } catch (error) {
+          console.error('关闭SSE连接时出错:', error)
+        }
+      } else {
+        console.log('没有活跃的SSE连接')
+      }
+    }
+
     // 中断CloudPan 189Share脚本执行
     const stopCloudPan189ShareScript = async () => {
       try {
         loading.value = true
-        const response = await axios.post('/189share/stop')
+        const response = await axios.post('/api/plugins/189share/stop')
         if (response.data.success) {
           ElMessage.success(response.data.message)
           // 中断后刷新日志
@@ -836,6 +1055,199 @@ export default {
         console.error(error)
       } finally {
         loading.value = false
+      }
+    }
+
+    // 日志管理相关方法
+    const handleLogTypeChange = () => {
+      if (logsForm.value.logType === 'plugin') {
+        fetchPlugins()
+      }
+      // 重新建立SSE连接
+      if (activeMenu.value === '5') {
+        establishLogsSSEConnection()
+      }
+    }
+
+    const fetchPlugins = async () => {
+      try {
+        const response = await axios.get('/api/logs/plugins')
+        if (response.data.success) {
+          availablePlugins.value = response.data.plugins
+        }
+      } catch (error) {
+        console.error('获取插件列表失败:', error)
+      }
+    }
+
+    const fetchLogs = async () => {
+      try {
+        loadingLogs.value = true
+        let response
+        if (logsForm.value.logType === 'all') {
+          response = await axios.get('/api/logs/all')
+        } else if (logsForm.value.logType === 'plugin' && logsForm.value.pluginName) {
+          response = await axios.get(`/api/logs/plugin/${logsForm.value.pluginName}`)
+        } else {
+          ElMessage.warning('请选择插件')
+          return
+        }
+        
+        if (response.data.success) {
+          logsContent.value = response.data.logs
+          // 自动滚动到底部
+          if (logsAutoScrollEnabled.value) {
+            setTimeout(() => {
+              scrollLogsToBottom()
+            }, 100)
+          }
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || '获取日志失败'
+        ElMessage.error(errorMessage)
+        console.error(error)
+      } finally {
+        loadingLogs.value = false
+      }
+    }
+
+    const scrollLogsToBottom = () => {
+      setTimeout(() => {
+        if (logsScrollbarRef.value) {
+          // 尝试不同的方式访问滚动容器
+          const scrollContainer = logsScrollbarRef.value.wrap || logsScrollbarRef.value.$refs?.wrap || document.querySelector('.el-scrollbar__wrap')
+          if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight
+          }
+        }
+      }, 50)
+    }
+
+    // 日志管理SSE连接
+    const logsSSEConnection = ref(null)
+
+    const establishLogsSSEConnection = () => {
+      // 关闭现有的SSE连接
+      if (logsSSEConnection.value) {
+        logsSSEConnection.value.close()
+        logsSSEConnection.value = null
+      }
+
+      // 创建新的SSE连接
+        const token = localStorage.getItem('token')
+        console.log('建立日志SSE连接，token:', token)
+        try {
+          let sseUrl
+          if (logsForm.value.logType === 'plugin' && logsForm.value.pluginName) {
+            // 插件日志SSE
+            sseUrl = `/api/logs/plugin/${logsForm.value.pluginName}/sse?token=${token}`
+          } else {
+            // 所有日志SSE
+            sseUrl = `/api/logs/all/sse?token=${token}`
+          }
+          
+          logsSSEConnection.value = new EventSource(sseUrl)
+
+        // 处理消息事件
+        logsSSEConnection.value.onmessage = (event) => {
+          if (event.data && event.data !== '\n') {
+            console.log('收到日志SSE消息:', event.data)
+            // 添加新的日志内容
+            logsContent.value += '\n' + event.data
+            
+            // 自动滚动到底部
+            if (logsAutoScrollEnabled.value) {
+              scrollLogsToBottom()
+            }
+          }
+        }
+
+        // 处理打开事件
+        logsSSEConnection.value.onopen = (event) => {
+          console.log('日志SSE连接已打开:', event)
+        }
+
+        // 处理错误事件
+        logsSSEConnection.value.onerror = (error) => {
+          console.error('日志SSE连接错误:', error)
+          console.error('日志SSE连接状态:', logsSSEConnection.value?.readyState)
+          // 关闭连接
+          if (logsSSEConnection.value) {
+            logsSSEConnection.value.close()
+            logsSSEConnection.value = null
+          }
+        }
+
+        console.log('日志SSE连接已建立:', sseUrl)
+      } catch (error) {
+        console.error('建立日志SSE连接时出错:', error)
+      }
+    }
+
+    const closeLogsSSEConnection = () => {
+      console.log('尝试关闭日志SSE连接:', logsSSEConnection.value)
+      if (logsSSEConnection.value) {
+        try {
+          logsSSEConnection.value.close()
+          logsSSEConnection.value = null
+          console.log('日志SSE连接已关闭')
+        } catch (error) {
+          console.error('关闭日志SSE连接时出错:', error)
+        }
+      } else {
+        console.log('没有活跃的日志SSE连接')
+      }
+    }
+
+    // 清理日志
+    const clearLogs = async () => {
+      try {
+        // 弹出确认对话框
+        await ElMessageBox.confirm('确定要清理当前日志吗？此操作不可恢复。', '警告', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+
+        // 关闭SSE连接
+        closeLogsSSEConnection()
+
+        // 根据日志类型调用相应的API
+        let url
+        if (logsForm.value.logType === 'plugin' && logsForm.value.pluginName) {
+          url = `/api/logs/plugin/${logsForm.value.pluginName}/clear`
+        } else {
+          url = '/api/logs/all/clear'
+        }
+
+        // 调用清理日志API
+        const response = await axios.post(url, {}, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+
+        if (response.data.success) {
+          ElMessage.success(response.data.message)
+          // 清理成功后刷新日志
+          setTimeout(() => {
+            fetchLogs()
+          }, 500)
+          // 重新建立SSE连接
+          setTimeout(() => {
+            establishLogsSSEConnection()
+          }, 1000)
+        } else {
+          ElMessage.error(response.data.message)
+        }
+      } catch (error) {
+        if (error !== 'cancel') {
+          const errorMessage = error.response?.data?.message || '清理日志失败'
+          ElMessage.error(errorMessage)
+          console.error('清理日志时出错:', error)
+        }
       }
     }
 
@@ -869,11 +1281,17 @@ export default {
       sidebarCollapsed,
       searchForm,
       currentPage,
+      pageSize,
+      customPageSize,
+      totalUsers,
+      actualPageSize,
       cloudpan189shareLogs,
       loadingCloudPanLogs,
       handleMenuSelect,
       toggleSidebar,
       handleCurrentChange,
+      handlePageSizeChange,
+      handleCustomPageSizeChange,
       formatDate,
       fetchUsers,
       openCreateUserDialog,
@@ -891,7 +1309,22 @@ export default {
       autoScrollEnabled,
       scrollbarRef,
       handleLoginSuccess,
-      handleLogout
+      handleLogout,
+      // 日志管理相关
+      logsForm,
+      logsContent,
+      loadingLogs,
+      logsAutoScrollEnabled,
+      logsScrollbarRef,
+      availablePlugins,
+      handleLogTypeChange,
+      fetchLogs,
+      fetchPlugins,
+      // 日志管理SSE相关
+      establishLogsSSEConnection,
+      closeLogsSSEConnection,
+      // 日志清理相关
+      clearLogs
     }
   }
 }
@@ -924,6 +1357,76 @@ body, html {
   width: 100%;
   max-width: 100vw;
   background-color: #f0f2f5;
+}
+
+/* 分页控件样式 */
+.pagination {
+  margin-top: 5px;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 5px 0;
+  margin-top: 5px;
+  gap: 15px;
+}
+
+.page-size-selector {
+  display: flex;
+  align-items: center;
+}
+
+/* 调整分页控件的样式 */
+:deep(.el-pagination) {
+  margin: 0;
+}
+
+:deep(.el-pagination__sizes) {
+  margin-right: 10px;
+}
+
+:deep(.el-pagination__jump) {
+  margin-left: 10px;
+}
+
+:deep(.el-pagination__prev),
+:deep(.el-pagination__next),
+:deep(.el-pagination__page-btn) {
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-pagination__prev:hover),
+:deep(.el-pagination__next:hover),
+:deep(.el-pagination__page-btn:hover) {
+  color: #409eff;
+  border-color: #c6e2ff;
+}
+
+:deep(.el-pagination__page-btn.is-current) {
+  background-color: #409eff;
+  border-color: #409eff;
+  color: #ffffff;
+}
+
+/* 调整输入框样式 */
+:deep(.el-input-number) {
+  width: 100px;
+}
+
+:deep(.el-input-number__decrease),
+:deep(.el-input-number__increase) {
+  border-radius: 0;
+}
+
+:deep(.el-input-number__decrease) {
+  border-right: none;
+}
+
+:deep(.el-input-number__increase) {
+  border-left: none;
 }
 
 /* 侧边栏样式 */

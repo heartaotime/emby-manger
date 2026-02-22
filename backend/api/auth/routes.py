@@ -3,7 +3,7 @@ from utils.auth import generate_token
 from config.auth import ADMIN_USERNAME, ADMIN_PASSWORD
 
 # 创建蓝图
-auth_bp = Blueprint('auth', __name__, url_prefix='/api')
+auth_bp = Blueprint('auth', __name__, url_prefix='')
 
 # 登录API
 @auth_bp.route('/login', methods=['POST'])

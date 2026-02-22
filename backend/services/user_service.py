@@ -1,6 +1,7 @@
 import datetime
 import pymysql
 from utils.database import get_db_connection
+from utils.logger import logger
 from services.emby_service import get_emby_users, get_emby_user_details, create_emby_user, update_emby_user_policy, delete_emby_user
 
 def toggle_user_status(user_id, is_active):
@@ -48,7 +49,7 @@ def toggle_user_status(user_id, is_active):
         emby_update_success, error_msg = update_emby_user_policy(emby_id, emby_user_data)
         status_icon = "🔒" if not is_active else "🔓"
         result_icon = "✅" if emby_update_success else "❌"
-        print(f"{result_icon} {status_icon} 已更新 Emby 用户 {emby_id} 状态: {'已禁用' if not is_active else '已启用'}, 成功: {emby_update_success}")
+        logger.info(f"{result_icon} {status_icon} 已更新 Emby 用户 {emby_id} 状态: {'已禁用' if not is_active else '已启用'}, 成功: {emby_update_success}")
         
         # 只有在Emby更新成功后才更新数据库
         if emby_update_success:
@@ -70,7 +71,7 @@ def toggle_user_status(user_id, is_active):
             conn.close()
             return False, f'在Emby中更新用户状态失败: {error_msg}' if error_msg else '在Emby中更新用户状态失败'
     except Exception as e:
-        print(f"❌ 启用/禁用用户错误: {e}")
+        logger.error(f"❌ 启用/禁用用户错误: {e}")
         return False, str(e)
 
 def sync_users():
@@ -94,9 +95,9 @@ def sync_users():
             name = user['Name']
             
             # 打印用户分隔符
-            print(f"\n{'='*50}")
-            print(f"👤 正在处理用户: {name} (ID: {emby_id})")
-            print(f"{'='*50}")
+            logger.info(f"\n{'='*50}")
+            logger.info(f"👤 正在处理用户: {name} (ID: {emby_id})")
+            logger.info(f"{'='*50}")
             
             # 获取用户详细信息，包括注册时间和激活状态
             user_details = get_emby_user_details(emby_id)
@@ -107,22 +108,22 @@ def sync_users():
                 # 获取注册时间
                 if 'DateCreated' in user_details:
                     date_created = user_details['DateCreated']
-                    print(f"📅 注册时间: {date_created}")
+                    logger.info(f"📅 注册时间: {date_created}")
                     # 转换ISO 8601格式为MySQL datetime格式
                     try:
                         # 解析ISO 8601格式
                         dt = datetime.datetime.fromisoformat(date_created.replace('Z', '+00:00'))
                         # 转换为MySQL支持的datetime格式
                         date_created = dt.strftime('%Y-%m-%d %H:%M:%S')
-                        print(f"🔄 转换后注册时间: {date_created}")
+                        logger.info(f"🔄 转换后注册时间: {date_created}")
                     except Exception as e:
-                        print(f"⚠️  时间格式转换失败: {e}")
+                        logger.warning(f"⚠️  时间格式转换失败: {e}")
                         date_created = None
                 
                 # 获取激活状态，使用 $.Policy.IsDisabled
                 if 'Policy' in user_details and 'IsDisabled' in user_details['Policy']:
                     is_active = not user_details['Policy']['IsDisabled']
-                    print(f"🔐 激活状态: {'启用' if is_active else '禁用'}")
+                    logger.info(f"🔐 激活状态: {'启用' if is_active else '禁用'}")
             
             # 检查用户是否已存在
             cursor.execute('SELECT id FROM users WHERE emby_id = %s', (emby_id,))
@@ -153,40 +154,58 @@ def sync_users():
     except Exception as e:
         return False, str(e)
 
-def get_users(search_query='', status_filter=None, expire_status=None):
+def get_users(search_query='', status_filter=None, expire_status=None, page=1, page_size=10):
     """
     获取用户列表
     :param search_query: 搜索关键词
     :param status_filter: 状态过滤
     :param expire_status: 过期状态过滤
-    :return: list 用户列表
+    :param page: 页码，默认为1
+    :param page_size: 每页大小，默认为10
+    :return: dict 包含用户列表和总记录数
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor(pymysql.cursors.DictCursor)
         
         # 构建查询
-        query = 'SELECT * FROM users WHERE state = 1'
+        base_query = 'SELECT * FROM users WHERE state = 1'
+        count_query = 'SELECT COUNT(*) as total FROM users WHERE state = 1'
         params = []
         
         if search_query:
-            query += ' AND name LIKE %s'
+            base_query += ' AND name LIKE %s'
+            count_query += ' AND name LIKE %s'
             params.append('%' + search_query + '%')
         
         if status_filter is not None:
             # 确保正确处理布尔值
             is_active = status_filter.lower() == 'true'
-            query += ' AND is_active = %s'
+            base_query += ' AND is_active = %s'
+            count_query += ' AND is_active = %s'
             params.append(is_active)
         
         if expire_status == 'active':
             # 只查询未过期的用户
-            query += ' AND (expire_date IS NULL OR expire_date >= NOW())'
+            base_query += ' AND (expire_date IS NULL OR expire_date >= NOW())'
+            count_query += ' AND (expire_date IS NULL OR expire_date >= NOW())'
         elif expire_status == 'expired':
             # 只查询已过期的用户
-            query += ' AND expire_date < NOW()'
+            base_query += ' AND expire_date < NOW()'
+            count_query += ' AND expire_date < NOW()'
         
-        cursor.execute(query, params)
+        # 计算分页偏移量
+        offset = (page - 1) * page_size
+        base_query += ' LIMIT %s OFFSET %s'
+        params.extend([page_size, offset])
+        
+        # 执行计数查询
+        cursor.execute(count_query, params[:-2])  # 排除LIMIT和OFFSET参数
+        total_result = cursor.fetchone()
+        total = total_result['total'] if total_result else 0
+        
+        # 执行分页查询
+        cursor.execute(base_query, params)
         users = cursor.fetchall()
         
         cursor.close()
@@ -227,10 +246,20 @@ def get_users(search_query='', status_filter=None, expire_status=None):
                 }
             formatted_users.append(formatted_user)
         
-        return formatted_users
+        return {
+            'data': formatted_users,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }
     except Exception as e:
-        print(f"❌ 获取用户列表错误: {e}")
-        return []
+        logger.error(f"❌ 获取用户列表错误: {e}")
+        return {
+            'data': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }
 
 def create_user(user_data):
     """
@@ -447,16 +476,16 @@ def check_expire():
             emby_id = user['emby_id']
             name = user['name']
             
-            print(f"🔍 检查过期用户: {name} (ID: {user_id}, Emby ID: {emby_id})")
+            logger.info(f"🔍 检查过期用户: {name} (ID: {user_id}, Emby ID: {emby_id})")
             
             # 使用公共方法禁用用户
-            print(f"🚫 正在禁用用户: {name}")
+            logger.info(f"🚫 正在禁用用户: {name}")
             success, message = toggle_user_status(user_id, False)
             if success:
                 disabled_count += 1
-                print(f"✅ 用户 {name} 已成功禁用")
+                logger.info(f"✅ 用户 {name} 已成功禁用")
             else:
-                print(f"❌ 禁用用户 {name} 失败: {message}")
+                logger.error(f"❌ 禁用用户 {name} 失败: {message}")
         
         conn.commit()
         
