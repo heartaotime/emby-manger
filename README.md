@@ -44,6 +44,7 @@ cd emby-manger
 ```yaml
 environment:
   - FLASK_ENV=production
+  - SECRET_KEY=your-secret-key-here  # JWT密钥
   - DB_HOST=100.64.64.1      # 数据库主机地址
   - DB_PORT=3306             # 数据库端口
   - DB_USER=emby_manager     # 数据库用户名
@@ -54,6 +55,11 @@ environment:
   - EMBY_TEMPLATE_USER_ID=bdb7f79dbbb24839aee075811af0625a  # 模板用户 ID
   - ADMIN_USERNAME=huxt      # 管理员用户名
   - ADMIN_PASSWORD=admin123  # 管理员密码
+  - 189SHARE_DB_PATH=./db/data.db  # 189share数据库路径
+  - 189SHARE_DIRECT_UPDATE=true  # 启用直接更新
+  - 189SHARE_MP_API_URL=http://your-api-server:3333/api/v1/media/recognize  # API服务器地址
+  - 189SHARE_MP_API_TOKEN=your-api-token  # API授权令牌
+  - 189SHARE_ID_START=0  # ID起始值
 ```
 
 #### 方法二：使用 .env 文件
@@ -69,6 +75,9 @@ copy .env.example .env
 `.env 文件包含以下配置项：
 
 ```
+# JWT配置
+SECRET_KEY=your-secret-key-here
+
 # 数据库配置
 DB_HOST=localhost
 DB_PORT=3306
@@ -84,6 +93,13 @@ EMBY_TEMPLATE_USER_ID=your_template_user_id
 # 管理员配置
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
+
+# plugin 189refresh配置
+189SHARE_DB_PATH=./db/data.db
+189SHARE_DIRECT_UPDATE=true # 启用直接更新
+189SHARE_MP_API_URL=http://your-api-server:3333/api/v1/media/recognize
+189SHARE_MP_API_TOKEN=your-api-token
+189SHARE_ID_START=0
 ```
 
 ### 启动服务

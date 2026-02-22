@@ -18,17 +18,17 @@ if not os.path.exists('data'):
     os.makedirs('data')
 
 # 从环境变量获取配置
-API_URL = os.getenv('189SHARE_API_URL')
-API_AUTHORIZATION = os.getenv('189SHARE_API_AUTHORIZATION')
+MP_API_URL = os.getenv('189SHARE_MP_API_URL')
+MP_API_TOKEN = os.getenv('189SHARE_MP_API_TOKEN')
 ID_START = int(os.getenv('189SHARE_ID_START', '0'))
 DB_PATH = os.getenv('189SHARE_DB_PATH')
 DIRECT_UPDATE = os.getenv('189SHARE_DIRECT_UPDATE', 'false').lower() == 'true'
 
 # 检查环境变量是否存在
-if not API_URL:
-    raise ValueError("189SHARE_API_URL 环境变量未设置")
-if not API_AUTHORIZATION:
-    raise ValueError("189SHARE_API_AUTHORIZATION 环境变量未设置")
+if not MP_API_URL:
+    raise ValueError("189SHARE_MP_API_URL 环境变量未设置")
+if not MP_API_TOKEN:
+    raise ValueError("189SHARE_MP_API_TOKEN 环境变量未设置")
 if not DB_PATH:
     raise ValueError("189SHARE_DB_PATH 环境变量未设置")
 
@@ -44,16 +44,12 @@ def get_media_info(name):
     encoded_title = urllib.parse.quote(name)
     
     # 构建 API 请求 URL
-    url = f"{API_URL}?title={encoded_title}&subtitle="
+    url = f"{MP_API_URL}?token={MP_API_TOKEN}&title={encoded_title}&subtitle="
     
-    # 定义请求头
-    headers = {
-        'Authorization': API_AUTHORIZATION
-    }
     
     # 发送请求
     try:
-        response = requests.get(url, headers=headers, verify=False, timeout=30)
+        response = requests.get(url, headers={}, verify=False, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:

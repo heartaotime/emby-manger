@@ -2,6 +2,7 @@
 backend/__pycache__/
 backend/.env
 backend/data
+backend/db
 backend/log
 
 # 前端排除文件
