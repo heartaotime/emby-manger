@@ -4,6 +4,8 @@ backend/.env
 backend/data
 backend/db
 backend/log
+backend/*.pyc
+
 
 # 前端排除文件
 frontend/node_modules/
@@ -29,3 +31,9 @@ frontend/package-lock.json
 
 # 构建产物（前端构建会在 Dockerfile 中单独处理）
 frontend/dist/
+
+# 项目文档和脚本
+README.md
+push_docker_image.bat
+push_docker_image.sh
+Dockerfile
